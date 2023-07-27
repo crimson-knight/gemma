@@ -1,4 +1,4 @@
-name: shrine
+name: gemma
 version: 0.6.5
 description: |
   File Attachment toolkit for Crystal applications
@@ -6,6 +6,7 @@ description: |
 authors:
   - Igor Alexandrov <igor.alexandrov@gmail.com>
   - Mick Wout <wout@mick-wout.com>
+  - Amber Team and Contributors <amberframework.org>
 
 crystal: ">= 1.0.0, < 2.0.0"
 

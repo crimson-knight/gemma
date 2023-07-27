@@ -1,6 +1,6 @@
 require "fastimage"
 
-class Shrine
+class Gemma
   module Plugins
     module StoreDimensions
       DEFAULT_OPTIONS = {
@@ -35,7 +35,7 @@ class Shrine
 
       module InstanceMethods
         # We update the metadata with "width" and "height".
-        private def extract_metadata(io, **options) : Shrine::UploadedFile::MetadataType
+        private def extract_metadata(io, **options) : Gemma::UploadedFile::MetadataType
           width, height = self.class.extract_dimensions(io).as(Tuple(UInt16, UInt16))
 
           super.merge({"width" => width, "height" => height})

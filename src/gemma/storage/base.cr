@@ -1,6 +1,6 @@
 require "habitat"
 
-class Shrine
+class Gemma
   module Storage
     abstract class Base
       getter? clean : Bool = true

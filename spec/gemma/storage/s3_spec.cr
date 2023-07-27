@@ -1,9 +1,9 @@
 require "../../spec_helper"
 require "awscr-s3"
 
-Spectator.describe Shrine::Storage::S3 do
+Spectator.describe Gemma::Storage::S3 do
   subject {
-    Shrine::Storage::S3.new(
+    Gemma::Storage::S3.new(
       bucket: bucket,
       client: client,
       prefix: prefix,
@@ -17,7 +17,7 @@ Spectator.describe Shrine::Storage::S3 do
   let(id) { "ex" }
 
   let(metadata) {
-    Shrine::UploadedFile::MetadataType{
+    Gemma::UploadedFile::MetadataType{
       "filename"  => id,
       "mime_type" => "image/jpeg",
       "size"      => "50",

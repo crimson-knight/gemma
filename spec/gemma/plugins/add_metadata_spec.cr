@@ -1,11 +1,11 @@
 require "../../spec_helper"
-require "../../../src/shrine/plugins/add_metadata"
+require "../../../src/gemma/plugins/add_metadata"
 
-class ShrineWithAddMetadata < Shrine
-  load_plugin Shrine::Plugins::AddMetadata
+class GemmaWithAddMetadata < Gemma
+  load_plugin Gemma::Plugins::AddMetadata
 
-  # redefine Shrine#extract_metadata to make it public
-  def extract_metadata(io : IO, **options) : Shrine::UploadedFile::MetadataType
+  # redefine Gemma#extract_metadata to make it public
+  def extract_metadata(io : IO, **options) : Gemma::UploadedFile::MetadataType
     super
   end
 
@@ -16,7 +16,7 @@ class ShrineWithAddMetadata < Shrine
   add_metadata :multiple_values, ->{
     text = io.gets_to_end
 
-    Shrine::UploadedFile::MetadataType{
+    Gemma::UploadedFile::MetadataType{
       "custom_1" => text,
       "custom_2" => text * 2,
     }
@@ -25,14 +25,14 @@ class ShrineWithAddMetadata < Shrine
   finalize_plugins!
 end
 
-Spectator.describe Shrine::Plugins::AddMetadata do
+Spectator.describe Gemma::Plugins::AddMetadata do
   include FileHelpers
 
   let(:uploader) {
-    ShrineWithAddMetadata.new("store")
+    GemmaWithAddMetadata.new("store")
   }
 
-  describe "Shrine.add_metadata" do
+  describe "Gemma.add_metadata" do
     describe "with argument" do
       it "adds declared metadata" do
         metadata = uploader.extract_metadata(fakeio)
@@ -48,7 +48,7 @@ Spectator.describe Shrine::Plugins::AddMetadata do
       end
     end
 
-    describe "withщге argument" do
+    describe "with argument" do
       it "adds declared metadata" do
         metadata = uploader.extract_metadata(fakeio)
 

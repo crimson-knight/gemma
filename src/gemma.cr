@@ -1,6 +1,6 @@
-require "./shrine/storage/*"
-require "./shrine/attacher"
-require "./shrine/uploaded_file"
+require "./gemma/storage/*"
+require "./gemma/attacher"
+require "./gemma/uploaded_file"
 
 require "habitat"
 
@@ -8,7 +8,7 @@ require "log"
 
 Log.setup_from_env
 
-class Shrine
+class Gemma
   PLUGINS = [] of Nil
 
   class Error < Exception; end
@@ -49,14 +49,14 @@ class Shrine
       load_plugin({{plugin[:decl]}}, {{plugin[:options].double_splat}})
     {% end %}
 
-    class Attacher < Shrine::Attacher
-      def self.shrine_class
+    class Attacher < Gemma::Attacher
+      def self.gemma_class
         {{ @type }}
       end
     end
 
     # class UploadedFile
-    #   def self.shrine_class
+    #   def self.gemma_class
     #     {{ @type }}
     #   end
     # end
@@ -93,25 +93,25 @@ class Shrine
     {% end %}
 
     {% if plugin.constant(:FileClassMethods) %}
-      class UploadedFile < Shrine::UploadedFile
+      class UploadedFile < Gemma::UploadedFile
         extend {{plugin.constant(:FileClassMethods)}}
       end
     {% end %}
 
     {% if plugin.constant(:FileMethods) %}
-      class UploadedFile < Shrine::UploadedFile
+      class UploadedFile < Gemma::UploadedFile
         include {{plugin.constant(:FileMethods)}}
       end
     {% end %}
 
     {% if plugin.constant(:AttacherClassMethods) %}
-      class Attacher < Shrine::Attacher
+      class Attacher < Gemma::Attacher
         extend {{plugin.constant(:AttacherClassMethods)}}
       end
     {% end %}
 
     {% if plugin.constant(:AttacherMethods) %}
-      class Attacher < Shrine::Attacher
+      class Attacher < Gemma::Attacher
         include {{plugin.constant(:AttacherMethods)}}
       end
     {% end %}
@@ -156,18 +156,18 @@ class Shrine
 
   module ClassMethods
     macro extended
-      Log = ::Log.for("shrine.cr")
+      Log = ::Log.for("Gemma")
     end
 
-    # Retrieves the storage under the given identifier (Symbol), raising Shrine::Error if the storage is missing.
+    # Retrieves the storage under the given identifier (Symbol), raising Gemma::Error if the storage is missing.
     def find_storage(name : String)
       settings.storages[name]? || raise Error.new("storage #{name.inspect} isn't registered on #{self}")
     end
 
-    # Uploads the file to the specified storage. It delegates to `Shrine#upload`.
+    # Uploads the file to the specified storage. It delegates to `Gemma#upload`.
     #
     # ```
-    # Shrine.upload(io, :store) # => #<Shrine::UploadedFile>
+    # Gemma.upload(io, :store) # => #<Gemma::UploadedFile>
     # ```
     def upload(io, storage, **options)
       new(storage).upload(io, **options)
@@ -203,14 +203,14 @@ class Shrine
     # deleted.
     #
     # ```
-    # Shrine.with_file(io) { |file| file.path }
+    # Gemma.with_file(io) { |file| file.path }
     # ```
     #
     def with_file(io : IO)
       if io.responds_to?(:path)
         yield io
       else
-        File.tempfile("shrine-file") do |file|
+        File.tempfile("gemma-file") do |file|
           File.write(file.path, io.gets_to_end)
           io.rewind
           yield file
@@ -226,7 +226,7 @@ class Shrine
 
     # Prints a warning to the logger.
     def warn(message)
-      Log.warn { "SHRINE WARNING: #{message}" }
+      Log.warn { "GEMMA WARNING: #{message}" }
     end
   end
 
@@ -242,7 +242,7 @@ class Shrine
     end
 
     # The main method for uploading files. Takes an IO-like object and an
-    # optional context hash (used internally by Shrine::Attacher). It calls
+    # optional context hash (used internally by Gemma::Attacher). It calls
     # user-defined #process, and afterwards it calls #store. The `io` is
     # closed after upload.
     #
@@ -272,13 +272,13 @@ class Shrine
 
     # Prints a warning to the logger.
     def warn(message)
-      Log.warn { "SHRINE WARNING: #{message}" }
+      Log.warn { "GEMMA WARNING: #{message}" }
     end
 
     # Extracts filename, size and MIME type from the file, which is later
     # accessible through UploadedFile#metadata.
-    private def extract_metadata(io, **options) : Shrine::UploadedFile::MetadataType
-      hash = Shrine::UploadedFile::MetadataType.new
+    private def extract_metadata(io, **options) : Gemma::UploadedFile::MetadataType
+      hash = Gemma::UploadedFile::MetadataType.new
       hash["filename"] = extract_filename(io)
       hash["size"] = extract_size(io)
       hash["mime_type"] = extract_mime_type(io)
@@ -310,7 +310,7 @@ class Shrine
     # Attempts to extract the MIME type from the IO object.
     private def extract_mime_type(io : IO)
       if io.responds_to?(:content_type) && io.content_type
-        Shrine.warn "The \"mime_type\" Shrine metadata field will be set from the \"Content-Type\" request header, which might not hold the actual MIME type of the file. It is recommended to load the determine_mime_type plugin which determines MIME type from file content."
+        Gemma.warn "The \"mime_type\" Gemma metadata field will be set from the \"Content-Type\" request header, which might not hold the actual MIME type of the file. It is recommended to load the determine_mime_type plugin which determines MIME type from file content."
         io.content_type.not_nil!.split(';').first # exclude media type parameters
       end
     end
@@ -328,7 +328,7 @@ class Shrine
       extension ? basename + extension : basename
     end
 
-    # If the IO object is a Shrine::UploadedFile, it simply copies over its
+    # If the IO object is a Gemma::UploadedFile, it simply copies over its
     # metadata, otherwise it calls #extract_metadata.
     private def get_metadata(io : IO, metadata : UploadedFile::MetadataType? = nil, **options)
       result = extract_metadata(io)

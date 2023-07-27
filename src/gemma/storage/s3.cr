@@ -3,7 +3,7 @@ require "./base"
 require "awscr-s3"
 require "content_disposition"
 
-class Shrine
+class Gemma
   module Storage
     class S3 < Storage::Base
       getter bucket : String
@@ -11,7 +11,7 @@ class Shrine
       getter? public : Bool
 
       # Initializes a storage for uploading to S3. All options are forwarded to
-      # [`Shrine::Storage::S3#initialize`], except the following:
+      # [`Gemma::Storage::S3#initialize`], except the following:
       #
       # :bucket
       # : (Required). Name of the S3 bucket.
@@ -43,7 +43,7 @@ class Shrine
       #
       def upload(io : IO | UploadedFile, id : String, move = false, **upload_options)
         options = Hash(String, String).new
-        if (metadata = upload_options[:metadata]?) && metadata.is_a?(Shrine::UploadedFile::MetadataType)
+        if (metadata = upload_options[:metadata]?) && metadata.is_a?(Gemma::UploadedFile::MetadataType)
           options["Content-Disposition"] = ContentDisposition.inline(metadata["filename"].to_s) if metadata["filename"]
         end
         options["x-amz-acl"] = "public-read" if public?
@@ -57,7 +57,7 @@ class Shrine
         true
       end
 
-      def upload(io : IO | UploadedFile, id : String, metadata : Shrine::UploadedFile::MetadataType, move = false, **upload_options)
+      def upload(io : IO | UploadedFile, id : String, metadata : Gemma::UploadedFile::MetadataType, move = false, **upload_options)
         upload(io, id, move, **(upload_options.merge(metadata: metadata)))
       end
 
