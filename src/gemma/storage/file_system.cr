@@ -1,6 +1,6 @@
 require "./base"
 
-class Shrine
+class Gemma
   module Storage
     class FileSystem < Storage::Base
       getter directory : String
@@ -60,7 +60,7 @@ class Shrine
         # TODO pass other options
         File.open(path(id), mode: "rb")
       rescue RuntimeError
-        raise Shrine::FileNotFound.new "file #{id.inspect} not found on storage"
+        raise Gemma::FileNotFound.new "file #{id.inspect} not found on storage"
       end
 
       # Returns true if the file exists on the filesystem.

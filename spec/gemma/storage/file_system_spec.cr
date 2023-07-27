@@ -2,11 +2,11 @@ require "file_utils"
 
 require "../../spec_helper"
 
-Spectator.describe Shrine::Storage::FileSystem do
+Spectator.describe Gemma::Storage::FileSystem do
   include FileHelpers
 
   subject {
-    Shrine::Storage::FileSystem.new(
+    Gemma::Storage::FileSystem.new(
       directory: root,
       prefix: prefix,
       permissions: permissions,
@@ -14,10 +14,10 @@ Spectator.describe Shrine::Storage::FileSystem do
     )
   }
 
-  let(root) { File.join(Dir.tempdir, "shrine") }
+  let(root) { File.join(Dir.tempdir, "gemma") }
   let(prefix) { nil }
-  let(permissions) { Shrine::Storage::FileSystem::DEFAULT_PERMISSIONS }
-  let(directory_permissions) { Shrine::Storage::FileSystem::DEFAULT_DIRECTORY_PERMISSIONS }
+  let(permissions) { Gemma::Storage::FileSystem::DEFAULT_PERMISSIONS }
+  let(directory_permissions) { Gemma::Storage::FileSystem::DEFAULT_DIRECTORY_PERMISSIONS }
 
   describe "#initialize" do
     context "without `prefix`" do
@@ -70,7 +70,7 @@ Spectator.describe Shrine::Storage::FileSystem do
 
       it "sets directory permissions" do
         expect(File.info(subject.expanded_directory).permissions.value)
-          .to eq(Shrine::Storage::FileSystem::DEFAULT_DIRECTORY_PERMISSIONS)
+          .to eq(Gemma::Storage::FileSystem::DEFAULT_DIRECTORY_PERMISSIONS)
       end
     end
 

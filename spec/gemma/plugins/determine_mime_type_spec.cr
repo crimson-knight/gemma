@@ -1,25 +1,25 @@
 require "../../spec_helper"
-require "../../../src/shrine/plugins/determine_mime_type"
+require "../../../src/gemma/plugins/determine_mime_type"
 
-class ShrineWithDetermineMimeTypeFile < Shrine
-  load_plugin(Shrine::Plugins::DetermineMimeType,
-    analyzer: Shrine::Plugins::DetermineMimeType::Tools::File)
-
-  finalize_plugins!
-end
-
-class ShrineWithDetermineMimeTypeMime < Shrine
-  load_plugin(Shrine::Plugins::DetermineMimeType,
-    analyzer: Shrine::Plugins::DetermineMimeType::Tools::Mime)
+class GemmaWithDetermineMimeTypeFile < Gemma
+  load_plugin(Gemma::Plugins::DetermineMimeType,
+    analyzer: Gemma::Plugins::DetermineMimeType::Tools::File)
 
   finalize_plugins!
 end
 
-Spectator.describe Shrine::Plugins::DetermineMimeType do
+class GemmaWithDetermineMimeTypeMime < Gemma
+  load_plugin(Gemma::Plugins::DetermineMimeType,
+    analyzer: Gemma::Plugins::DetermineMimeType::Tools::Mime)
+
+  finalize_plugins!
+end
+
+Spectator.describe Gemma::Plugins::DetermineMimeType do
   include FileHelpers
 
   context "file analyzer" do
-    subject { ShrineWithDetermineMimeTypeFile }
+    subject { GemmaWithDetermineMimeTypeFile }
 
     describe ".determine_mime_type" do
       it "determines MIME type from file contents" do
@@ -41,7 +41,7 @@ Spectator.describe Shrine::Plugins::DetermineMimeType do
   end
 
   context "mime analyzer" do
-    subject { ShrineWithDetermineMimeTypeMime }
+    subject { GemmaWithDetermineMimeTypeMime }
 
     describe ".determine_mime_type" do
       it "extract MIME type from the file extension" do

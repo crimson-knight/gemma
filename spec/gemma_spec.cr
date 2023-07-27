@@ -1,7 +1,7 @@
 require "./spec_helper"
 
-Spectator.describe Shrine do
-  include ShrineHelpers
+Spectator.describe Gemma do
+  include GemmaHelpers
   include FileHelpers
 
   describe ".with_file" do

@@ -1,18 +1,18 @@
 # frozen_string_literal: true
 
-class Shrine
-  # Core class that handles attaching files. It uses Shrine and
-  # Shrine::UploadedFile objects internally.
+class Gemma
+  # Core class that handles attaching files. It uses Gemma and
+  # Gemma::UploadedFile objects internally.
   class Attacher
-    # Returns the Shrine class that this attacher class is namespaced
+    # Returns the Gemma class that this attacher class is namespaced
     # under.
-    class_getter shrine_class : Shrine.class = Shrine
+    class_getter gemma_class : Gemma.class = Gemma
 
     module ClassMethods
       # Initializes the attacher from a data hash generated from `Attacher#data`.
       #
       #     attacher = Attacher.from_data({ "id" => "...", "storage" => "...", "metadata" => { ... } })
-      #     attacher.file #=> #<Shrine::UploadedFile>
+      #     attacher.file #=> #<Gemma::UploadedFile>
       def from_data(data : Hash(String, String | UploadedFile::MetadataType)?, **options)
         attacher = new(**options)
         attacher.load_data(data)
@@ -22,7 +22,7 @@ class Shrine
 
     module InstanceMethods
       # Returns the attached uploaded file.
-      property file : Shrine::UploadedFile?
+      property file : Gemma::UploadedFile?
 
       # Returns options that are automatically forwarded to the uploader.
       # Can be modified with additional data.
@@ -31,10 +31,10 @@ class Shrine
       getter :cache_key
       getter :store_key
 
-      @previous : Shrine::Attacher?
+      @previous : Gemma::Attacher?
 
       # Initializes the attached file, temporary and permanent storage.
-      def initialize(@file : Shrine::UploadedFile? = nil, @cache_key : String = "cache", @store_key : String = "store")
+      def initialize(@file : Gemma::UploadedFile? = nil, @cache_key : String = "cache", @store_key : String = "store")
         @file = file
         @cache_key = cache_key
         @store_key = store_key
@@ -92,7 +92,7 @@ class Shrine
       #
       #     # removes the attachment
       #     attacher.attach(nil)
-      def attach(io : IO | Shrine::UploadedFile | Nil, storage = store_key, **options) : UploadedFile | Nil
+      def attach(io : IO | Gemma::UploadedFile | Nil, storage = store_key, **options) : UploadedFile | Nil
         file = upload(io, storage, **options) if io
 
         change(file)
@@ -141,20 +141,20 @@ class Shrine
       #     attacher.cached? #=> true
       #     attacher.promote
       #     attacher.stored? #=> true
-      def promote(storage = store_key, **options) : Shrine::UploadedFile | Nil
+      def promote(storage = store_key, **options) : Gemma::UploadedFile | Nil
         set upload(file.not_nil!, storage, **options.merge(action: :store)) if file
       end
 
-      # Delegates to `Shrine.upload`, passing the #context.
+      # Delegates to `Gemma.upload`, passing the #context.
       #
       #     # upload file to specified storage
-      #     attacher.upload(io, "store") #=> #<Shrine::UploadedFile>
+      #     attacher.upload(io, "store") #=> #<Gemma::UploadedFile>
       #
       #     # pass additional options for the uploader
       #     attacher.upload(io, "store", metadata: { "foo" => "bar" })
-      def upload(io : IO | Shrine::UploadedFile, storage = store_key, **options) : Shrine::UploadedFile
-        # shrine_class.upload(io, storage, **context, **options)
-        shrine_class.upload(io, storage, **options)
+      def upload(io : IO | Gemma::UploadedFile, storage = store_key, **options) : Gemma::UploadedFile
+        # gemma_class.upload(io, storage, **context, **options)
+        gemma_class.upload(io, storage, **options)
       end
 
       # If a new file was attached, deletes previously attached file if any.
@@ -195,7 +195,7 @@ class Shrine
       #
       #     attacher.file #=> nil
       #     attacher.load_data({ "id" => "...", "storage" => "...", "metadata" => { ... } })
-      #     attacher.file #=> #<Shrine::UploadedFile>
+      #     attacher.file #=> #<Gemma::UploadedFile>
       def load_data(data : Hash(String, String | UploadedFile::MetadataType))
         @file = uploaded_file(data)
       end
@@ -211,9 +211,9 @@ class Shrine
       # Sets the uploaded file with dirty tracking, and runs validations.
       #
       #     attacher.change(uploaded_file)
-      #     attacher.file #=> #<Shrine::UploadedFile>
+      #     attacher.file #=> #<Gemma::UploadedFile>
       #     attacher.changed? #=> true
-      def change(file : Shrine::UploadedFile?) : Shrine::UploadedFile?
+      def change(file : Gemma::UploadedFile?) : Gemma::UploadedFile?
         @previous = dup unless @file == file
 
         set(file)
@@ -222,16 +222,16 @@ class Shrine
       # Sets the uploaded file.
       #
       #     attacher.set(uploaded_file)
-      #     attacher.file #=> #<Shrine::UploadedFile>
+      #     attacher.file #=> #<Gemma::UploadedFile>
       #     attacher.changed? #=> false
-      def set(file : Shrine::UploadedFile?) : Shrine::UploadedFile?
+      def set(file : Gemma::UploadedFile?) : Gemma::UploadedFile?
         @file = file
       end
 
       # Returns the attached file.
       #
       #     # when a file is attached
-      #     attacher.get #=> #<Shrine::UploadedFile>
+      #     attacher.get #=> #<Gemma::UploadedFile>
       #
       #     # when no file is attached
       #     attacher.get #=> nil
@@ -296,21 +296,21 @@ class Shrine
         file.try &.data
       end
 
-      # Converts JSON or Hash data into a Shrine::UploadedFile object.
+      # Converts JSON or Hash data into a Gemma::UploadedFile object.
       #
       #     attacher.uploaded_file("{\"id\":\"...\",\"storage\":\"...\",\"metadata\":{...}}")
-      #     #=> #<Shrine::UploadedFile ...>
+      #     #=> #<Gemma::UploadedFile ...>
       #
       #     attacher.uploaded_file({ "id" => "...", "storage" => "...", "metadata" => {} })
-      #     #=> #<Shrine::UploadedFile ...>
+      #     #=> #<Gemma::UploadedFile ...>
       def uploaded_file(value)
-        shrine_class.uploaded_file(value)
+        gemma_class.uploaded_file(value)
       end
 
-      # Returns the Shrine class that this attacher's class is namespaced
+      # Returns the Gemma class that this attacher's class is namespaced
       # under.
-      def shrine_class
-        self.class.shrine_class
+      def gemma_class
+        self.class.gemma_class
       end
 
       # Converts a String or Hash value into an UploadedFile object and ensures
@@ -318,18 +318,18 @@ class Shrine
       #
       #     # from JSON data
       #     attacher.cached("{\"id\":\"...\",\"storage\":\"cache\",\"metadata\":{...}}")
-      #     #=> #<Shrine::UploadedFile>
+      #     #=> #<Gemma::UploadedFile>
       #
       #     # from Hash data
       #     attacher.cached({ "id" => "...", "storage" => "cache", "metadata" => { ... } })
-      #     #=> #<Shrine::UploadedFile>
+      #     #=> #<Gemma::UploadedFile>
       private def cached(value : String | Hash(String, String | UploadedFile::MetadataType), **options)
         uploaded_file = uploaded_file(value)
 
         # reject files not uploaded to temporary storage, because otherwise
         # attackers could hijack other users' attachments
         unless cached?(uploaded_file)
-          raise Shrine::NotCached.new "expected cached file, got #{uploaded_file.inspect}"
+          raise Gemma::NotCached.new "expected cached file, got #{uploaded_file.inspect}"
         end
 
         uploaded_file

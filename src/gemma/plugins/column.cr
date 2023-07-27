@@ -1,4 +1,4 @@
-class Shrine
+class Gemma
   module Plugins
     module Column
       abstract class BaseSerializer
@@ -25,7 +25,7 @@ class Shrine
       end
 
       DEFAULT_OPTIONS = {
-        column_serializer: Shrine::Plugins::Column::JsonSerializer,
+        column_serializer: Gemma::Plugins::Column::JsonSerializer,
       }
 
       module AttacherClassMethods
@@ -42,10 +42,10 @@ class Shrine
 
       module AttacherMethods
         # Column serializer object.
-        getter column_serializer : Shrine::Plugins::Column::BaseSerializer.class
+        getter column_serializer : Gemma::Plugins::Column::BaseSerializer.class
 
         # Allows overriding the default column serializer.
-        def initialize(@column_serializer = self.class.shrine_class.plugin_settings.column[:column_serializer], **options)
+        def initialize(@column_serializer = self.class.gemma_class.plugin_settings.column[:column_serializer], **options)
           super(**options)
         end
 
@@ -53,7 +53,7 @@ class Shrine
         #
         #     attacher.file #=> nil
         #     attacher.load_column('{"id":"...","storage":"...","metadata":{...}}')
-        #     attacher.file #=> #<Shrine::UploadedFile>
+        #     attacher.file #=> #<Gemma::UploadedFile>
         def load_column(data : String) : UploadedFile
           load_data(column_serializer.load(data))
         end

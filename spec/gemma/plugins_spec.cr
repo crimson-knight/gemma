@@ -26,7 +26,7 @@ module FooPlugin
   end
 end
 
-class NonPluginUploader < Shrine
+class NonPluginUploader < Gemma
   module ClassMethods
     def foo
       "foo"
@@ -48,7 +48,7 @@ class PluginUploader < NonPluginUploader
   finalize_plugins!
 end
 
-Spectator.describe "Shrine.plugin" do
+Spectator.describe "Gemma.plugin" do
   describe NonPluginUploader do
     let(uploader_instance) { described_class.new("store") }
 
@@ -86,7 +86,7 @@ Spectator.describe "Shrine.plugin" do
     end
 
     it "does not pollute superclass" do
-      expect(Shrine::UploadedFile).not_to respond_to("foo")
+      expect(Gemma::UploadedFile).not_to respond_to("foo")
     end
   end
 end

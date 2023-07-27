@@ -1,6 +1,6 @@
 require "./base"
 
-class Shrine
+class Gemma
   module Storage
     class Memory < Storage::Base
       getter store
@@ -17,7 +17,7 @@ class Shrine
         # StringIO.new(store.fetch(id))
         IO::Memory.new(store[id])
       rescue KeyError
-        raise Shrine::FileNotFound.new("file #{id.inspect} not found on storage")
+        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage")
       end
 
       def open(id : String, **options) : IO

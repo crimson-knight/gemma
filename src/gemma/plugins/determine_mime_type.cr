@@ -1,6 +1,6 @@
 require "mime"
 
-class Shrine
+class Gemma
   module Plugins
     module DetermineMimeType
       DEFAULT_OPTIONS = {

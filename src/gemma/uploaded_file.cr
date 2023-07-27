@@ -1,6 +1,6 @@
 require "json"
 
-class Shrine
+class Gemma
   class UploadedFile
     include JSON::Serializable
 
@@ -115,7 +115,7 @@ class Shrine
     # ```
     #
     def download(**options)
-      tempfile = File.tempfile("shrine", ".#{extension}")
+      tempfile = File.tempfile("gemma", ".#{extension}")
       stream(tempfile, **options)
       tempfile.rewind
     end
@@ -193,12 +193,12 @@ class Shrine
 
     # Returns an uploader object for the corresponding storage.
     def uploader
-      Shrine.new(storage_key)
+      Gemma.new(storage_key)
     end
 
     # Returns the storage that this file was uploaded to.
-    def storage : Shrine::Storage::Base
-      Shrine.find_storage(storage_key.not_nil!).not_nil!
+    def storage : Gemma::Storage::Base
+      Gemma.find_storage(storage_key.not_nil!).not_nil!
     end
 
     def io : IO
