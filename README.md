@@ -100,7 +100,51 @@ storage = Gemma::Storage::S3.new(bucket: "bucket_name", client: client, public: 
 
 ### ORM usage example
 
-Currently ORM adapters are not implmented.
+#### Grant (Recommended - Full Support)
+
+Grant ORM now has full integration support with comprehensive features:
+
+```crystal
+require "gemma/grant"
+
+class User < Grant::Base
+  include Gemma::Grant::Attachable
+  
+  column id : Int64, primary: true
+  column name : String
+  column avatar_data : JSON::Any?
+  column documents_data : JSON::Any?
+  
+  # Single file attachment
+  has_one_attached :avatar
+  
+  # Multiple file attachments  
+  has_many_attached :documents
+end
+
+# Usage
+user = User.new(name: "John")
+user.avatar = File.open("avatar.jpg")
+user.documents = [File.open("doc1.pdf"), File.open("doc2.pdf")]
+user.save
+
+# Access attachments
+puts user.avatar_url
+user.documents.each { |doc| puts doc.url }
+
+# With validations
+class ValidatedUser < Grant::Base
+  include Gemma::Grant::Attachable
+  include Gemma::Grant::AttachmentValidators
+  
+  has_one_attached :avatar
+  
+  validate_file_size_of :avatar, maximum: 5.megabytes
+  validate_content_type_of :avatar, accept: ["image/jpeg", "image/png"]
+end
+```
+
+See [GRANT_COMPLETE_GUIDE.md](GRANT_COMPLETE_GUIDE.md) for comprehensive documentation.
 
 #### Granite
 
@@ -317,8 +361,8 @@ Items not marked as completed may have partial implementations.
 - [ ] Uploaders
   - [x] Custom uploaders
   - [ ] Derivatives
-- [ ] ORM adapters
-  - [ ] `Grant` [https://github.com/crimson-knight/grant](https://github.com/crimson-knight/grant)
+- [x] ORM adapters
+  - [x] `Grant` [https://github.com/crimson-knight/grant](https://github.com/crimson-knight/grant) - **Full Support with Validations**
 - [x] Plugins
 - [ ] Background processing
 

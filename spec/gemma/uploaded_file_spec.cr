@@ -63,24 +63,20 @@ Spectator.describe Gemma::UploadedFile do
   describe "#extension" do
     subject { uploaded_file.extension }
 
-    # FIXME: This results in `Invalid memory access (signal 11) at address 0x0`.
-    #
-    # context "with extension in `id`" do
-    #   let(id) { "foo.jpg" }
-    #   it { is_expected.to eq("jpg") }
-    # end
+    context "with extension in `id`" do
+      let(id) { "foo.jpg" }
+      it { is_expected.to eq("jpg") }
+    end
 
     context "without extension in `id`" do
       let(id) { "foo" }
       it { is_expected.to be_nil }
     end
 
-    # FIXME: This results in `Invalid memory access (signal 11) at address 0x0`.
-    #
-    # context "with filename and extension in `metadata`" do
-    #   let(filename) { "foo.jpg" }
-    #   it { is_expected.to eq("jpg") }
-    # end
+    context "with filename and extension in `metadata`" do
+      let(filename) { "foo.jpg" }
+      it { is_expected.to eq("jpg") }
+    end
 
     context "with filename in `metadata`" do
       let(filename) { "foo" }

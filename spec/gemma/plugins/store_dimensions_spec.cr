@@ -22,6 +22,15 @@ end
 
 Spectator.describe Gemma::Plugins::StoreDimensions do
   include FileHelpers
+  include GemmaHelpers
+
+  before_each do
+    clear_storages
+  end
+
+  after_each do
+    clear_storages
+  end
 
   describe "primary purpose" do
     let(uploader) {
