@@ -36,3 +36,9 @@ development_dependencies:
   webmock:
     github: manastech/webmock.cr
     version: 0.14.0
+  grant:
+    github: crimson-knight/grant
+    branch: main
+  sqlite3:
+    github: crystal-lang/crystal-sqlite3
+    version: ~> 0.21.0

@@ -14,7 +14,7 @@ Spectator.describe Gemma::Storage::FileSystem do
     )
   }
 
-  let(root) { File.join(Dir.tempdir, "gemma") }
+  let(root) { File.join(Dir.tempdir, "gemma-#{Random::Secure.hex(8)}") }
   let(prefix) { nil }
   let(permissions) { Gemma::Storage::FileSystem::DEFAULT_PERMISSIONS }
   let(directory_permissions) { Gemma::Storage::FileSystem::DEFAULT_DIRECTORY_PERMISSIONS }
@@ -166,15 +166,6 @@ Spectator.describe Gemma::Storage::FileSystem do
           subject.exists?("a/a/a.jpg")
         ).to be_true
       end
-
-      # it "cleans moved file's directory" do
-      #   uploaded_file = subject.upload(fakeio, location: "a/a/a.jpg")
-      #   subject.upload(uploaded_file, "b.jpg", move: true)
-
-      #   expect(
-      #     subject.exists?("a/a")
-      #   ).to be_false
-      # end
 
       context "with 0o600 permissions" do
         let(permissions) { 0o600 }
