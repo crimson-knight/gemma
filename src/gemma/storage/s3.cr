@@ -61,15 +61,14 @@ class Gemma
         upload(io, id, move, **(upload_options.merge(metadata: metadata)))
       end
 
-      # Returns a IO object from S3
+      # Returns a rewound IO object from S3.
       def open(id : String, **options) : IO
         io = IO::Memory.new
         client.get_object(bucket, object_key(id)) do |obj|
-          io << obj
+          IO.copy(obj.body_io, io)
         end
 
-        # io
-        # client.get_object(bucket, object_key(id)).body_io
+        io.rewind
       end
 
       # Returns the presigned URL to the file.

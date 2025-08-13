@@ -5,6 +5,8 @@
 
 Gemma is a toolkit for file attachments in Crystal applications. Heavily inspired by [Shrine for Ruby](https://shrinerb.com).
 
+This is a fork from [JetRockets](https://github.com/jetrockets/shrine.cr)
+
 ## Installation
 
 1. Add the dependency to your `shard.yml`:
@@ -316,10 +318,7 @@ Items not marked as completed may have partial implementations.
   - [x] Custom uploaders
   - [ ] Derivatives
 - [ ] ORM adapters
-  - [ ] `Granite` [https://github.com/amberframework/granite](https://github.com/amberframework/granite)
-  - [ ] `crecto` [https://github.com/Crecto/crecto](https://github.com/Crecto/crecto)
-  - [ ] `jennifer.cr` [https://github.com/imdrasil/jennifer.cr](https://github.com/imdrasil/jennifer.cr)
-  - [ ] `Avram` [https://github.com/luckyframework/avram](https://github.com/luckyframework/avram)
+  - [ ] `Grant` [https://github.com/crimson-knight/grant](https://github.com/crimson-knight/grant)
 - [x] Plugins
 - [ ] Background processing
 
