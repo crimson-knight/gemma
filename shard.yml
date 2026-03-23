@@ -42,3 +42,8 @@ development_dependencies:
   sqlite3:
     github: crystal-lang/crystal-sqlite3
     version: ~> 0.21.0
+
+ai_docs:
+  exclude:
+    - .claude/settings.json
+    - .claude/settings.local.json
