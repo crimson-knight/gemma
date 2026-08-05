@@ -38,7 +38,7 @@ development_dependencies:
     version: 0.14.0
   grant:
     github: crimson-knight/grant
-    branch: main
+    commit: bda8cd3166e24c6587370fa6857d3eb94c8ba833  # was branch: main
   sqlite3:
     github: crystal-lang/crystal-sqlite3
     version: ~> 0.21.0
