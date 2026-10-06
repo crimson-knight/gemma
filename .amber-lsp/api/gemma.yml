@@ -1,0 +1,19 @@
+card_version: 1
+library: gemma
+applies_to: "~> 0.6.0"
+docs_entries:
+  - src/gemma.cr
+  - src/gemma/grant.cr
+notes:
+  - symbol: Gemma::Grant::Attachable.has_one_attached
+    text: "Require gemma/grant and include Gemma::Grant::Attachable in a Grant model. has_one_attached reads and writes a nilable Hash(String, String | Gemma::UploadedFile::MetadataType) <name>_data field, then adds a nilable UploadedFile getter, a URL method, and save/destroy hooks."
+  - symbol: Gemma::Grant::Attachable.has_many_attached
+    text: "has_many_attached reads and writes an Array of Hash(String, String | Gemma::UploadedFile::MetadataType) in the plural <name>_data field. It adds an UploadedFile array getter, add/remove/clear helpers, and save/destroy hooks."
+  - symbol: Gemma::Attacher#attach_cached
+    text: "Gemma::Attacher#attach_cached(io) uploads an IO to the cache storage. #attach(io, storage = store_key) returns Gemma::UploadedFile | Nil, and #file is nilable until an upload is attached."
+  - symbol: Gemma::UploadedFile#url
+    text: "Gemma::UploadedFile.new(id, storage_key, metadata) creates the attachment value. #url(**options) returns String, #storage returns Gemma::Storage::Base, and #data returns the serializable id, storage_key, and metadata map."
+  - symbol: Gemma::Storage::Base#open
+    text: "A storage adapter implements open(id : String, **options) : IO, url(id, **options) : String, exists?(id) : Bool, plus upload, delete, and clean. Gemma::Storage::Memory is a built-in adapter for this interface."
+  - symbol: Gemma.configure
+    text: "Register named adapters in Gemma.configure through config.storages, a Hash(String, Gemma::Storage::Base). Gemma.upload(io, storage, **options) returns Gemma::UploadedFile."
