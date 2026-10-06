@@ -7,7 +7,7 @@ class FakeIO < IO::Memory
     filename : String? = nil,
     content_type : String? = nil
   )
-    super(content.to_slice, writeable: false)
+    super(content.to_slice, writable: false)
 
     @original_filename = filename
     @content_type = content_type

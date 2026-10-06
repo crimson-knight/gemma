@@ -33,5 +33,9 @@ jobs:
       - name: Check formatting
         run: crystal tool format --check
 
+      - name: Build Ameba
+        # Ameba 1.7 installs no bin/ameba; build it from the pinned source.
+        run: mkdir -p bin && crystal build lib/ameba/src/cli.cr -o bin/ameba
+
       - name: Run Ameba
-        run: crystal bin/ameba.cr
+        run: ./bin/ameba
