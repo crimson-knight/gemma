@@ -26,6 +26,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
 
+      - name: Install ImageMagick
+        # The dimension specs call ImageMagick's identify.
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
       - name: Install dependencies
         run: shards install
         env:
