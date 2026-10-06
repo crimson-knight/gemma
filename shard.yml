@@ -26,7 +26,8 @@ dependencies:
 development_dependencies:
   ameba:
     github: crystal-ameba/ameba
-    commit: 88e0437
+    # Crystal 1.21 compatibility (Ameba 1.7.0-dev); the same commit Grant uses.
+    commit: cdd58b34b0d8a9c785d67183a7a8f07541549e55
   fastimage:
     github: jetrockets/fastimage.cr
     version: ~> 1.2.1
@@ -38,7 +39,8 @@ development_dependencies:
     version: 0.14.0
   grant:
     github: crimson-knight/grant
-    branch: main
+    commit: da1e06161148f156dbce262a4a4efcb39cba5ba4
   sqlite3:
     github: crystal-lang/crystal-sqlite3
-    version: ~> 0.21.0
+    # Matches Grant's driver; 0.23.0 resolves against db 0.14.
+    version: "0.23.0"
