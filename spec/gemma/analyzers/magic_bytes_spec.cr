@@ -40,6 +40,17 @@ describe Gemma::Analyzers::MagicBytes do
       Gemma::Analyzers::MagicBytes.mime_type(fixture_bytes("unknown.bin")).should be_nil
     end
 
+    it "gives nil for an ftyp box that is incomplete or has an unknown brand" do
+      truncated = Bytes[0x00, 0x00, 0x00, 0x0c, 0x66, 0x74, 0x79, 0x70, 0x45, 0x56, 0x49, 0x4c]
+      unknown_brand = Bytes[0x00, 0x00, 0x00, 0x10, 0x66, 0x74, 0x79, 0x70, 0x45, 0x56, 0x49, 0x4c, 0, 0, 0, 0]
+      oversized_box = fixture_bytes("small.mp4").dup
+      oversized_box[3] = 0xF0_u8
+
+      Gemma::Analyzers::MagicBytes.mime_type(truncated).should be_nil
+      Gemma::Analyzers::MagicBytes.mime_type(unknown_brand).should be_nil
+      Gemma::Analyzers::MagicBytes.mime_type(oversized_box[0, 32]).should be_nil
+    end
+
     it "gives nil for no bytes" do
       Gemma::Analyzers::MagicBytes.mime_type(Bytes.empty).should be_nil
     end

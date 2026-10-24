@@ -61,6 +61,22 @@ describe Gemma::Storage::S3 do
       request.headers.has_key?("metadata").should be_false
     end
 
+    it "sends an SVG as an attachment, so a browser never runs its script inline" do
+      sent_request = nil
+      WebMock.stub(:put, "#{S3_SPEC_HOST}/drawing.svg").to_return do |request|
+        sent_request = request
+        HTTP::Client::Response.new(200)
+      end
+
+      s3_storage.upload(FakeIO.new("<svg><script>alert(1)</script></svg>"), "drawing.svg",
+        Gemma::Metadata.new(filename: "drawing.svg", mime_type: "image/svg+xml"))
+
+      request = sent_request
+      raise "the PUT never reached the stub" unless request
+      request.headers["Content-Disposition"].should start_with("attachment;")
+      request.headers["Content-Type"].should eq("image/svg+xml")
+    end
+
     it "raises a ResponseError with the status code and raw body when the service refuses" do
       WebMock.stub(:put, "#{S3_SPEC_HOST}/denied.jpg").to_return(
         status: 403, body: "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>")

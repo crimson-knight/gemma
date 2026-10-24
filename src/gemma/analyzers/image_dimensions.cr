@@ -65,7 +65,9 @@ class Gemma
           return if segment_length < 2
 
           if JPEG_FRAME_MARKERS.includes?(marker)
-            return unless offset + 7 <= bytes.size
+            # Length, precision, height, width and component count: at
+            # least 8 bytes, all inside the segment and the buffer.
+            return unless segment_length >= 8 && offset + segment_length <= bytes.size
             return {u16_be(bytes, offset + 5), u16_be(bytes, offset + 3)}
           end
 

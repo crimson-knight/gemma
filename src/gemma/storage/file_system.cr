@@ -50,7 +50,18 @@ class Gemma
 
       # Streams *io* into the file at *id*, creating directories as needed.
       def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
-        File.write(path!(id), io, perm: permissions)
+        file_path = path!(id)
+        # Write beside the target and rename over it, so a failed upload
+        # (an IO error, or `Gemma::FileTooLarge` mid-stream) leaves any
+        # existing file untouched and never exposes a partial one.
+        staging_path = "#{file_path}.#{Random::Secure.hex(8)}.gemma-upload"
+        begin
+          File.write(staging_path, io, perm: permissions)
+          File.rename(staging_path, file_path)
+        rescue error
+          File.delete?(staging_path)
+          raise error
+        end
       end
 
       # Opens the file at *id* for reading.

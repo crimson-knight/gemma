@@ -25,6 +25,10 @@ describe Gemma::Analyzers::ImageDimensions do
       Gemma::Analyzers::ImageDimensions.dimensions(fixture_bytes("large-comment.jpg")[0, 1000]).should be_nil
     end
 
+    it "gives nil for a JPEG frame header shorter than its fields" do
+      Gemma::Analyzers::ImageDimensions.dimensions(Bytes[0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x02, 0x08, 0x00, 0x1E, 0x00, 0x28]).should be_nil
+    end
+
     it "gives nil for files that are not images it reads" do
       Gemma::Analyzers::ImageDimensions.dimensions(fixture_bytes("small.pdf")).should be_nil
       Gemma::Analyzers::ImageDimensions.dimensions(fixture_bytes("small.tiff")).should be_nil

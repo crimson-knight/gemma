@@ -71,9 +71,11 @@ class Gemma
     private def self.read_string?(pull : JSON::PullParser) : String?
       case pull.kind
       when .string? then pull.read_string
-      when .int?    then pull.read_int.to_s
-      when .float?  then pull.read_float.to_s
-      when .bool?   then pull.read_bool.to_s
+      when .int?, .float?
+        # The number's own text, so a value past Int64 (Gemma 0.6 stored
+        # UInt64) loads unchanged.
+        pull.read_raw
+      when .bool? then pull.read_bool.to_s
       else
         pull.skip
         nil
@@ -89,7 +91,7 @@ class Gemma
     # Reads an integer, or a string holding one; nil for anything else.
     private def self.read_integer?(pull : JSON::PullParser) : Int64?
       case pull.kind
-      when .int?    then pull.read_int
+      when .int?    then pull.read_raw.to_i64?
       when .string? then pull.read_string.to_i64?
       else
         pull.skip

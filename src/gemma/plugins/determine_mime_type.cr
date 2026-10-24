@@ -29,9 +29,6 @@ class Gemma
         analyzer: Gemma::Plugins::DetermineMimeType::Tools::MagicBytes,
       }
 
-      # MIME types a browser renders as active content.
-      ACTIVE_CONTENT_TYPES = {"text/html", "application/xhtml+xml", "text/xml", "application/xml", "image/svg+xml", "text/javascript", "application/javascript", "application/ecmascript"}
-
       enum Tools
         MagicBytes
         File
@@ -92,7 +89,7 @@ class Gemma
           media_type = Gemma.media_type(claim)
           return unless media_type
 
-          ACTIVE_CONTENT_TYPES.includes?(media_type) ? "application/octet-stream" : media_type
+          Analyzers::ACTIVE_CONTENT_TYPES.includes?(media_type) ? "application/octet-stream" : media_type
         end
 
         private def extract_with_file(prefix : Bytes) : String?

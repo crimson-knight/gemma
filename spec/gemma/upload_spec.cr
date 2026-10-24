@@ -73,6 +73,31 @@ describe "Gemma#upload" do
       FiveMegabyteUploader.new("store").upload(IO::Memory.new(Bytes.new(5_000_000))).size.should eq(5_000_000)
     end
 
+    it "keeps the existing file when a replacement is too large" do
+      original = uploader.upload(fakeio("12345"))
+
+      expect_raises(Gemma::FileTooLarge) do
+        uploader.upload(fakeio("123456"), location: original.id, max_size: 5_i64)
+      end
+
+      original.open(&.gets_to_end).should eq("12345")
+    end
+
+    it "keeps the existing file on FileSystem, where the bytes stream to disk" do
+      with_file_system_storages do |_root|
+        original = uploader.upload(fakeio("12345"))
+
+        expect_raises(Gemma::FileTooLarge) do
+          uploader.upload(IO::Memory.new("x" * 2_000_000), location: original.id, max_size: 1_000_000_i64)
+        end
+
+        original.open(&.gets_to_end).should eq("12345")
+        storage = original.storage
+        raise "expected a FileSystem storage" unless storage.is_a?(Gemma::Storage::FileSystem)
+        Dir.children(File.dirname(storage.path(original.id))).should eq([original.id])
+      end
+    end
+
     it "takes a limit per call" do
       expect_raises(Gemma::FileTooLarge) do
         uploader.upload(fakeio("12345"), max_size: 4_i64)
@@ -86,6 +111,20 @@ describe "Gemma#upload" do
         uploader("store").upload(cached, max_size: 4_i64)
       end
       memory_storage("store").store.should be_empty
+    end
+  end
+
+  context "copying an UploadedFile" do
+    it "reads the type from the bytes, not from the source's metadata" do
+      cached = uploader("cache").upload(fakeio("plain text"))
+      forged = Gemma::UploadedFile.new(cached.id, "cache", Gemma::Metadata.new(filename: "a.png", mime_type: "image/png", size: 1_i64))
+
+      stored = uploader("store").upload(forged)
+
+      stored.mime_type.should eq("text/plain")
+      stored.size.should eq("plain text".bytesize)
+      stored.id.should end_with(".txt")
+      stored.original_filename.should eq("a.png")
     end
   end
 

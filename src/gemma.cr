@@ -281,11 +281,12 @@ class Gemma
     end
 
     # Copies *source* (a file on another storage) to this uploader's
-    # storage, keeping its metadata and recounting its size.
+    # storage. Its bytes are analyzed again, as for any upload; only its
+    # original filename and custom fields carry over.
     def upload(source : UploadedFile, *, location : String? = nil, max_size : Int64? = self.max_size) : UploadedFile
       source_io = source.storage.open(source.id)
       begin
-        store_stream(source_io, location || generate_location(source.metadata), source.metadata, max_size)
+        upload(source_io, location: location, filename: source.original_filename, metadata: source.metadata.extra, max_size: max_size)
       ensure
         source_io.close
       end
@@ -348,10 +349,14 @@ class Gemma
 
     private def store_stream(io : IO, location : String, metadata : Metadata, max_size : Int64?) : UploadedFile
       body = SizeLimitedIO.new(io, max_size)
+      # Gemma's storages write nothing when an upload fails; a custom one
+      # may leave part of the file. Remove that, but never a file that was
+      # at *location* before (a `replace` that was too large).
+      location_was_free = max_size.nil? || !storage.exists?(location)
       begin
         storage.upload(body, location, metadata)
       rescue error : FileTooLarge
-        storage.delete(location)
+        storage.delete(location) if location_was_free
         raise error
       end
 

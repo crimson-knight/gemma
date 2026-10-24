@@ -1,5 +1,9 @@
 class Gemma
   module Analyzers
+    # MIME types a browser runs as active content when it opens them: HTML,
+    # XHTML, XML, SVG and JavaScript.
+    ACTIVE_CONTENT_TYPES = {"text/html", "application/xhtml+xml", "text/xml", "application/xml", "image/svg+xml", "text/javascript", "application/javascript", "application/ecmascript"}
+
     # Detects a file's MIME type from its first bytes ("magic numbers"),
     # without any external command. It recognizes the types apps accept
     # most: JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF, AVIF, PDF, MP3, M4A,
@@ -41,6 +45,7 @@ class Gemma
       AVIF_BRANDS = {"avif", "avis"}
       M4A_BRANDS  = {"M4A ", "M4B ", "M4P "}
       MOV_BRANDS  = {"qt  "}
+      MP4_BRANDS  = {"isom", "iso2", "iso3", "iso4", "iso5", "iso6", "iso7", "iso8", "iso9", "mp41", "mp42", "mp71", "avc1", "M4V ", "M4VH", "M4VP", "dash", "mmp4", "MSNV", "f4v "}
 
       # Returns the MIME type *bytes* (the start of a file) identify, or nil.
       def self.mime_type(bytes : Bytes) : String?
@@ -80,7 +85,7 @@ class Gemma
       # `ftyp` box whose major brand names the format; WebM and Matroska
       # share the EBML header.
       private def self.container_type(bytes : Bytes) : String?
-        if ascii_at?(bytes, 4, "ftyp") && bytes.size >= 12
+        if ftyp_box?(bytes)
           brand = String.new(bytes[8, 4])
           if HEIC_BRANDS.includes?(brand)
             "image/heic"
@@ -92,7 +97,7 @@ class Gemma
             "audio/mp4"
           elsif MOV_BRANDS.includes?(brand)
             "video/quicktime"
-          else
+          elsif MP4_BRANDS.includes?(brand)
             "video/mp4"
           end
         elsif starts_with?(bytes, 0, Bytes[0x1A, 0x45, 0xDF, 0xA3])
@@ -100,6 +105,16 @@ class Gemma
         elsif starts_with?(bytes, 0, Bytes[0x50, 0x4B, 0x03, 0x04]) || starts_with?(bytes, 0, Bytes[0x50, 0x4B, 0x05, 0x06])
           "application/zip"
         end
+      end
+
+      # A complete `ftyp` box: a big-endian size of at least 16 bytes (size,
+      # type, major brand, minor version) that is a multiple of four, with
+      # the whole box present.
+      private def self.ftyp_box?(bytes : Bytes) : Bool
+        return false unless bytes.size >= 16 && ascii_at?(bytes, 4, "ftyp")
+
+        box_size = (bytes[0].to_u32 << 24) | (bytes[1].to_u32 << 16) | (bytes[2].to_u32 << 8) | bytes[3].to_u32
+        box_size >= 16 && box_size % 4 == 0 && box_size <= bytes.size
       end
 
       private def self.document_type(bytes : Bytes) : String?

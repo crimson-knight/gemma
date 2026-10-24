@@ -29,6 +29,16 @@ describe Gemma::Metadata do
     Gemma::UploadedFile.from_json(reloaded.to_json).metadata.should eq(Gemma::UploadedFile.from_json(GEMMA_06_ROW).metadata)
   end
 
+  it "loads a custom number past Int64, which Gemma 0.6 stored as UInt64" do
+    file = Gemma::UploadedFile.from_json(%({"id":"a","storage_key":"store","metadata":{"counter":18446744073709551615,"ratio":0.5}}))
+
+    file.metadata.extra.should eq({"counter" => "18446744073709551615", "ratio" => "0.5"})
+  end
+
+  it "gives no size for a size past Int64" do
+    Gemma::UploadedFile.from_json(%({"id":"a","storage_key":"store","metadata":{"size":18446744073709551615}})).size.should be_nil
+  end
+
   it "loads a row with a string size" do
     Gemma::UploadedFile.from_json(%({"id":"a","storage_key":"store","metadata":{"size":"50"}})).size.should eq(50_i64)
   end
