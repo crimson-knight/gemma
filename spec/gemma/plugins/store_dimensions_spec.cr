@@ -38,7 +38,7 @@ describe Gemma::Plugins::StoreDimensions do
     end
 
     it "fails with missing image data" do
-      expect_raises(Gemma::Error) do
+      expect_raises(Gemma::AnalyzerFailed) do
         GemmaWithStoreDimensionsUsingFastImage.extract_dimensions(fakeio)
       end
     end
@@ -50,7 +50,7 @@ describe Gemma::Plugins::StoreDimensions do
     end
 
     it "fails with missing image data" do
-      expect_raises(Gemma::Error) do
+      expect_raises(Gemma::AnalyzerFailed) do
         GemmaWithStoreDimensionsUsingIdentify.extract_dimensions(fakeio)
       end
     end

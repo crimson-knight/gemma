@@ -1,14 +1,16 @@
+require "log"
+
 require "./gemma/error"
 require "./gemma/settings"
 require "./gemma/storage/*"
 require "./gemma/attacher"
 require "./gemma/uploaded_file"
 
-require "log"
-
-Log.setup_from_env
-
 class Gemma
+  # Gemma's log source ("gemma"). Gemma never configures logging itself;
+  # the app's `Log.setup` decides where these entries go.
+  Log = ::Log.for(self)
+
   PLUGINS = [] of Nil
 
   # Returns Gemma's settings. Subclasses share the settings of `Gemma`.
@@ -43,10 +45,10 @@ class Gemma
   end
 
   macro inherited
-    {{@type}}::PLUGINS = [] of Nil
+    {{ @type }}::PLUGINS = [] of Nil
 
     {% for plugin in @type.superclass.constant(:PLUGINS) %}
-      load_plugin({{plugin[:decl]}}, {{plugin[:options].double_splat}})
+      load_plugin({{ plugin[:decl] }}, {{ plugin[:options].double_splat }})
     {% end %}
 
     class Attacher < Gemma::Attacher
@@ -67,7 +69,7 @@ class Gemma
     {% options = args %}
 
     {% if PLUGINS.map { |e| e[:decl] }.includes?(plugin) %}
-      raise ArgumentError.new("Cannot load plugin {{plugin.stringify}} to {{@type}}. Plugin has already been initialized")
+      raise ArgumentError.new("Cannot load plugin {{ plugin.stringify }} to {{ @type }}. Plugin has already been initialized")
     {% else %}
       {% if plugin.constant(:DEFAULT_OPTIONS) %}
         {% if !options %}
@@ -85,34 +87,34 @@ class Gemma
     {% end %}
 
     {% if plugin.constant(:InstanceMethods) %}
-      include {{plugin.constant(:InstanceMethods)}}
+      include {{ plugin.constant(:InstanceMethods) }}
     {% end %}
 
     {% if plugin.constant(:ClassMethods) %}
-      extend {{plugin.constant(:ClassMethods)}}
+      extend {{ plugin.constant(:ClassMethods) }}
     {% end %}
 
     {% if plugin.constant(:FileClassMethods) %}
       class UploadedFile < Gemma::UploadedFile
-        extend {{plugin.constant(:FileClassMethods)}}
+        extend {{ plugin.constant(:FileClassMethods) }}
       end
     {% end %}
 
     {% if plugin.constant(:FileMethods) %}
       class UploadedFile < Gemma::UploadedFile
-        include {{plugin.constant(:FileMethods)}}
+        include {{ plugin.constant(:FileMethods) }}
       end
     {% end %}
 
     {% if plugin.constant(:AttacherClassMethods) %}
       class Attacher < Gemma::Attacher
-        extend {{plugin.constant(:AttacherClassMethods)}}
+        extend {{ plugin.constant(:AttacherClassMethods) }}
       end
     {% end %}
 
     {% if plugin.constant(:AttacherMethods) %}
       class Attacher < Gemma::Attacher
-        include {{plugin.constant(:AttacherMethods)}}
+        include {{ plugin.constant(:AttacherMethods) }}
       end
     {% end %}
   end
@@ -155,13 +157,10 @@ class Gemma
   end
 
   module ClassMethods
-    macro extended
-      Log = ::Log.for("Gemma")
-    end
-
-    # Retrieves the storage under the given identifier (Symbol), raising Gemma::Error if the storage is missing.
-    def find_storage(name : String)
-      settings.storages[name]? || raise Error.new("storage #{name.inspect} isn't registered on #{self}")
+    # Returns the storage registered under *name*, raising
+    # `Gemma::StorageNotRegistered` if there is none.
+    def find_storage(name : String) : Storage::Base
+      settings.storages[name]? || raise StorageNotRegistered.new("storage #{name.inspect} isn't registered on #{self}")
     end
 
     # Uploads the file to the specified storage. It delegates to `Gemma#upload`.
@@ -187,7 +186,7 @@ class Gemma
     end
 
     def uploaded_file(hash : Hash(String, String | UploadedFile::MetadataType))
-      self.uploaded_file(hash.to_json)
+      uploaded_file(hash.to_json)
     end
 
     def uploaded_file(json : String)
@@ -225,9 +224,9 @@ class Gemma
       end
     end
 
-    # Prints a warning to the logger.
-    def warn(message)
-      Log.warn { "GEMMA WARNING: #{message}" }
+    # Logs *message* as a warning on Gemma's log source.
+    def warn(message : String) : Nil
+      Log.warn { message }
     end
   end
 
@@ -271,9 +270,9 @@ class Gemma
       basic_location(io, metadata: metadata)
     end
 
-    # Prints a warning to the logger.
-    def warn(message)
-      Log.warn { "GEMMA WARNING: #{message}" }
+    # Logs *message* as a warning on Gemma's log source.
+    def warn(message : String) : Nil
+      Log.warn { message }
     end
 
     # Extracts filename, size and MIME type from the file, which is later
@@ -310,10 +309,13 @@ class Gemma
 
     # Attempts to extract the MIME type from the IO object.
     private def extract_mime_type(io : IO)
-      if io.responds_to?(:content_type) && io.content_type
-        Gemma.warn "The \"mime_type\" Gemma metadata field will be set from the \"Content-Type\" request header, which might not hold the actual MIME type of the file. It is recommended to load the determine_mime_type plugin which determines MIME type from file content."
-        io.content_type.not_nil!.split(';').first # exclude media type parameters
-      end
+      return unless io.responds_to?(:content_type)
+
+      declared_content_type = io.content_type
+      return unless declared_content_type
+
+      Log.warn { "The \"mime_type\" metadata comes from the client's Content-Type header, which might not hold the actual MIME type of the file. Load the determine_mime_type plugin to read it from the file content." }
+      declared_content_type.split(';').first # exclude media type parameters
     end
 
     private def extract_mime_type(io : UploadedFile)
@@ -323,7 +325,8 @@ class Gemma
     # Generates a basic location for an uploaded file
     private def basic_location(io, metadata : UploadedFile::MetadataType)
       extension = ".#{io.extension}" if io.is_a?(UploadedFile) && io.extension
-      extension ||= File.extname(metadata["filename"].as(String)) if metadata["filename"]?
+      filename = metadata["filename"]?
+      extension ||= File.extname(filename) if filename.is_a?(String)
       basename = generate_uid(io)
 
       extension ? basename + extension : basename

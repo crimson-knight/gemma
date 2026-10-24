@@ -92,7 +92,7 @@ class Gemma
         io.rewind
       rescue error : ResponseError
         raise error unless error.status_code == 404
-        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage: #{error.message}")
+        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage: #{error.message}", cause: error)
       end
 
       # Returns a presigned GET URL to the file. Pass `expires_in:` (a

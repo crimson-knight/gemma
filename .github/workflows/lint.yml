@@ -25,6 +25,4 @@ jobs:
 
       - name: Run Ameba
         # Ameba 1.7 installs no bin/ameba; build it from the pinned source.
-        # Reports without failing until the hygiene PR brings the count to 0.
-        continue-on-error: true
         run: docker run --rm -v "$PWD":/app gemma-ci sh -c 'mkdir -p bin && crystal-alpha build lib/ameba/src/cli.cr -o bin/ameba && bin/ameba src spec'

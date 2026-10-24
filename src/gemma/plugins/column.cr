@@ -33,7 +33,7 @@ class Gemma
         # from a database record column.
         #
         #     Attacher.from_column('{"id":"...","storage":"...","metadata":{...}}')
-        def from_column(data, **options) : Attacher | Nil
+        def from_column(data, **options) : Attacher?
           attacher = new(**options)
           attacher.load_column(data)
           attacher
@@ -65,7 +65,7 @@ class Gemma
         # Returns attacher data as a serialized string (JSON by default).
         #
         #     attacher.column_data #=> '{"id":"...","storage":"...","metadata":{...}}'
-        def column_data : String | Nil
+        def column_data : String?
           column_serializer.dump(data)
         end
       end
