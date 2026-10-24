@@ -1,7 +1,7 @@
 require "json"
 require "./metadata"
 
-class Gemma
+module Gemma
   # A file Gemma stored: where it is (`id` on the storage named
   # `storage_key`) and what Gemma knows about it (`metadata`). It is a
   # plain value; opening it returns a new IO each time, which the caller
@@ -135,9 +135,9 @@ class Gemma
       storage.delete(id)
     end
 
-    # An uploader for this file's storage.
-    def uploader : Gemma
-      Gemma.new(storage_key)
+    # A base uploader for this file's storage.
+    def uploader : Gemma::Uploader
+      Gemma::Uploader.new(storage_key)
     end
 
     def storage : Gemma::Storage::Base

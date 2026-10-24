@@ -2,7 +2,7 @@ require "./base"
 require "../content_disposition"
 require "./s3/*"
 
-class Gemma
+module Gemma
   module Storage
     # Stores files in an S3-compatible bucket: AWS S3, DigitalOcean Spaces,
     # MinIO. It talks to the service through `Gemma::Storage::S3::Client`,

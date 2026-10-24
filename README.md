@@ -25,44 +25,75 @@ This is a fork from [JetRockets](https://github.com/jetrockets/shrine.cr)
 require "gemma"
 ```
 
-Gemma is under heavy development!
-
-First of all, you should configure `Gemma`.
+Configure the storages once at boot (in an Amber app,
+`config/initializers/gemma.cr`):
 
 ```crystal
 Gemma.configure do |config|
-  config.storages["cache"] = Storage::FileSystem.new("uploads", prefix: "cache")
-  config.storages["store"] = Storage::FileSystem.new("uploads")
+  config.storages["cache"] = Gemma::Storage::FileSystem.new("uploads", prefix: "cache")
+  config.storages["store"] = Gemma::Storage::FileSystem.new("uploads", prefix: "store")
 end
 ```
 
-Now you can use `Gemma` directly to upload your files.
+Then upload any `IO` (a file, a request body, a socket) to a storage by
+name. Gemma streams it once, counts its size and reads its MIME type from
+the bytes:
 
 ```crystal
-Gemma.upload(file, "store")
+uploaded_file = Gemma.upload(file, "store")
+uploaded_file.size      # => 753
+uploaded_file.mime_type # => "image/png"
+uploaded_file.url       # => "/uploads/store/0f1e...a9.png"
 ```
 
-`Gemma.upload` method supports additional argument just like Shrine for Ruby. For example we want our file to have a custom filename.
+The client's filename and custom fields can be passed; Gemma sanitizes the
+filename and ignores attempts to set `size`, `mime_type`, `width` or
+`height`, which always come from the file:
 
 ```crystal
-Gemma.upload(file, "store", metadata: { "filename" => "foo.bar" })
+Gemma.upload(file, "store", filename: "photo.png", metadata: {"album" => "trips"})
+```
+
+In an Amber controller, pass the multipart part itself so the client's
+filename and `Content-Type` come along:
+
+```crystal
+Gemma.upload(params.files["avatar"], "cache")
+```
+
+A stored file is a value. Open it, download it to a tempfile, or store its
+JSON (`{"id": ..., "storage_key": ..., "metadata": {...}}`) in a text column:
+
+```crystal
+uploaded_file.open(&.gets_to_end)
+uploaded_file.download { |tempfile| tempfile.path }
+
+json = uploaded_file.to_json
+same_file = Gemma::UploadedFile.from_json(json)
 ```
 
 ### Custom uploaders
 
-To implement custom uploader class just inherit it from `Gemma`. You can override `Gemma` methods to implement custom logic. Here is an example how to create a custom file location.
+Subclass `Gemma::Uploader` and override its methods. This one limits the
+size of uploads and stores them under a directory:
 
 ```crystal
-class FileImport::AssetUploader < Gemma
-  def generate_location(io : IO | UploadedFile, metadata, context, **options)
-    name = super(io, metadata, **options)
+class AvatarUploader < Gemma::Uploader
+  def max_size : Int64?
+    5_000_000_i64
+  end
 
-    File.join("imports", context[:model].id.to_s, name)
+  def generate_location(metadata : Gemma::Metadata) : String
+    File.join("avatars", super)
   end
 end
 
-FileImport::AssetUploader.upload(file, "store", context: { model: YOUR_ORM_MODEL } })
+AvatarUploader.upload(file, "store")
 ```
+
+An upload past `max_size` raises `Gemma::FileTooLarge` while it streams, and
+nothing is left in storage. `upload(io, "store", max_size: ...)` sets a limit
+for one call.
 
 ### S3 storage
 
@@ -174,108 +205,76 @@ end
 
 See [GRANT_COMPLETE_GUIDE.md](GRANT_COMPLETE_GUIDE.md) for comprehensive documentation.
 
-#### Granite
+#### Other ORMs
+
+Store the file's JSON in a text column and attach through
+`Gemma::Attacher`, which caches an upload and promotes it to permanent
+storage:
 
 ```crystal
-class FileImport < Granite::Base
-  connection pg
-  table file_imports
+attacher = Gemma::Attacher.new
+attacher.assign(file)        # uploads to "cache"
+attacher.promote_and_cleanup # copies to "store", deletes a replaced file
+column_value = attacher.column_data
 
-  column id : Int64, primary: true
-  column asset_data : Gemma::UploadedFile, converter: Granite::Converters::Json(Gemma::UploadedFile, JSON::Any)
-
-  after_save do
-    if @asset_changed && @asset_data
-      @asset_data = FileImport::AssetUploader.store(@asset_data.not_nil!, move: true, context: { model: self })
-      @asset_changed = false
-
-      save!
-    end
-  end
-
-  def asset=(upload : Amber::Router::File)
-    @asset_data = FileImport::AssetUploader.cache(upload.file, metadata: { filename: upload.filename })
-    @asset_changed = true
-  end
-end
-
-```
-
-#### Jennifer
-
-```crystal
-class FileImport < Jennifer::Model::Base
-  @asset_changed : Bool | Nil
-
-  with_timestamps
-
-  mapping(
-    id: Primary32,
-    asset_data: JSON::Any?,
-    created_at: Time?,
-    updated_at: Time?
-  )
-
-  after_save :move_to_store
-
-  def asset=(upload : Amber::Router::File)
-    self.asset_data = JSON.parse(FileImport::AssetUploader.cache(upload.file, metadata: { filename: upload.filename }).to_json)
-    asset_changed! if asset_data
-  end
-
-  def asset
-    Gemma::UploadedFile.from_json(asset_data.not_nil!.to_json) if asset_data
-  end
-
-  def asset_changed?
-    @asset_changed || false
-  end
-
-  private def asset_changed!
-    @asset_changed = true
-  end
-
-  private def move_to_store
-    if asset_changed?
-      self.asset_data = JSON.parse(FileImport::AssetUploader.store(asset.not_nil!, move: true, context: { model: self }).to_json)
-      @asset_changed = false
-      save!
-    end
-  end
-end
-
+attacher = Gemma::Attacher.from_column(column_value)
+attacher.file.try(&.url)
 ```
 
 ## Plugins
 
-Gemma has a plugins interface similar to Shrine for Ruby. Plugins extend
-uploaders inherited from `Gemma`; file readers live on `Gemma::Metadata`
-(`size`, `mime_type`, `width`, `height`, `filename`, `extra`).
+Plugins are modules an uploader includes. Without any, every upload records
+its size (counted while it streams) and its MIME type (from Gemma's built-in
+magic-byte sniffer, which needs no external command).
 
-Without any plugin, every upload records its size (counted while it
-streams) and its MIME type (from Gemma's built-in magic-byte sniffer, which
-needs no external command).
+### Store Dimensions
 
-### Determine MIME Type
-
-The `DetermineMimeType` plugin chooses how the MIME type is detected.
+Records the width and height of uploaded images. Files that are not images
+are stored without dimensions.
 
 ```crystal
-require "gemma/plugins/determine_mime_type"
+class ImageUploader < Gemma::Uploader
+  include Gemma::Plugins::StoreDimensions
+end
 
-class Uploader < Gemma
-  load_plugin(
-    Gemma::Plugins::DetermineMimeType,
-    analyzer: Gemma::Plugins::DetermineMimeType::Tools::File
-  )
+image = ImageUploader.upload(file, "store")
+image.width      # => 300 (Int32?)
+image.height     # => 300
+image.dimensions # => {300, 300}
+```
 
-  finalize_plugins!
+| Tool       | Description |
+| ---------- | ----------- |
+| `Header`   | (**Default**) Gemma's header reader for PNG, GIF, JPEG (baseline and progressive), WebP and BMP. No external command. |
+| `Identify` | Runs ImageMagick's `identify` on the upload's first bytes. Opt-in; it needs ImageMagick installed. |
+
+Choose a tool by overriding the class method:
+
+```crystal
+class PosterUploader < Gemma::Uploader
+  include Gemma::Plugins::StoreDimensions
+
+  def self.dimensions_tool : Gemma::Plugins::StoreDimensions::Tools
+    Gemma::Plugins::StoreDimensions::Tools::Identify
+  end
 end
 ```
 
-**Analyzers**
+### Determine MIME Type
 
-| Name          | Description |
+Chooses how the MIME type is detected.
+
+```crystal
+class DocumentUploader < Gemma::Uploader
+  include Gemma::Plugins::DetermineMimeType
+
+  def self.mime_type_tool : Gemma::Plugins::DetermineMimeType::Tools
+    Gemma::Plugins::DetermineMimeType::Tools::File
+  end
+end
+```
+
+| Tool          | Description |
 | ------------- | ----------- |
 | `MagicBytes`  | (**Default**) Gemma's built-in sniffer: JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF, AVIF, SVG, PDF, MP3, M4A, WAV, FLAC, Ogg, MP4, QuickTime, WebM, ZIP and UTF-8 text. Anything else gives `nil`. |
 | `File`        | Runs the `file` command on the upload's first bytes. Opt-in; it needs `file` installed. |
@@ -286,94 +285,33 @@ end
 bytes the sniffer does not recognize, and answers `application/octet-stream`
 instead of a type a browser runs (HTML, XHTML, XML, SVG, JavaScript).
 
-### Add Metadata
+### Custom metadata
 
-The `AddMetadata` plugin adds custom fields, computed from the upload's first
-bytes (`Gemma::SNIFF_BYTES`, 256 KiB), which each block reads as `io`.
-
-```crystal
-require "base64"
-require "gemma/plugins/add_metadata"
-
-class Uploader < Gemma
-  load_plugin(Gemma::Plugins::AddMetadata)
-
-  add_metadata :signature, -> {
-    Base64.encode(io.gets_to_end)
-  }
-
-  finalize_plugins!
-end
-```
-
-The above adds `"signature"` to the file's custom fields:
-
-```crystal
-image.metadata.extra["signature"]
-```
-
-A block can also return a `Hash(String, String)` to add several fields at
-once. Built-in fields (`size`, `mime_type`, `width`, `height`, `filename`)
+Override `custom_metadata` to store your own fields. It reads the upload's
+first bytes (`Gemma::SNIFF_BYTES`, 256 KiB) and sees the metadata found so
+far. Built-in fields (`size`, `mime_type`, `width`, `height`, `filename`)
 always come from the file and cannot be set this way.
 
 ```crystal
-class Uploader < Gemma
-  load_plugin(Gemma::Plugins::AddMetadata)
+require "digest/sha256"
 
-  add_metadata :multiple_values, -> {
-    text = io.gets_to_end
-
-    {
-      "custom_1" => text,
-      "custom_2" => text * 2,
-    }
-  }
-
-  finalize_plugins!
-end
-```
-
-### Store Dimensions
-
-The `StoreDimensions` plugin records the width and height of uploaded
-images. Files that are not images are stored without dimensions.
-
-```crystal
-require "gemma/plugins/store_dimensions"
-
-class Uploader < Gemma
-  load_plugin Gemma::Plugins::StoreDimensions
-
-  finalize_plugins!
-end
-```
-
-```crystal
-image.width      # => 300 (Int32?)
-image.height     # => 300
-image.dimensions # => {300, 300}
-```
-
-**Analyzers**
-
-| Name       | Description |
-| ---------- | ----------- |
-| `Header`   | (**Default**) Gemma's header reader for PNG, GIF, JPEG (baseline and progressive), WebP and BMP. No external command. |
-| `Identify` | Runs ImageMagick's `identify` on the upload's first bytes. Opt-in; it needs ImageMagick installed. |
-
-### Upload size limit
-
-Override `max_size` in an uploader, or pass `max_size:` to `upload`. An
-upload that passes the limit raises `Gemma::FileTooLarge` while it streams,
-and nothing is left in storage.
-
-```crystal
-class AvatarUploader < Gemma
-  def max_size : Int64?
-    5_000_000_i64
+class SignedUploader < Gemma::Uploader
+  def custom_metadata(io : IO, metadata : Gemma::Metadata) : Hash(String, String)
+    {"signature" => Digest::SHA256.hexdigest(io.getb_to_end)}
   end
 end
+
+signed = SignedUploader.upload(file, "store")
+signed.metadata.extra["signature"]
 ```
+
+### Upgrading from Gemma 0.6 plugins
+
+`load_plugin` and `finalize_plugins!` were removed; using them is a compile
+error that names the replacement. `include Gemma::Plugins::StoreDimensions`
+replaces `load_plugin(Gemma::Plugins::StoreDimensions, ...)`, a
+`custom_metadata` override replaces `AddMetadata`, and the `Column` plugin's
+methods are built into `Gemma::Attacher`.
 
 ## Feature Progress
 
@@ -382,12 +320,11 @@ Items not marked as completed may have partial implementations.
 
 - [x] Gemma
 - [x] Gemma::UploadedFile
-  - [ ] ==
+  - [x] ==
   - [x] #original_filename
   - [x] #extension
   - [x] #size
   - [x] #mime_type
-  - [x] #close
   - [x] #url
   - [x] #exists?
   - [x] #open

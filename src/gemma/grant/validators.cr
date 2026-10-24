@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   module Grant
     # Validation helpers for attachments
     module AttachmentValidators

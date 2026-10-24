@@ -1,7 +1,7 @@
 require "uri"
 require "./base"
 
-class Gemma
+module Gemma
   module Storage
     # Stores files under a directory on the local filesystem. Every id is
     # resolved inside that directory: an id that would land outside it

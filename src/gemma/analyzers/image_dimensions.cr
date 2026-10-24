@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   module Analyzers
     # Reads an image's width and height from its header bytes, without
     # decoding the image or running an external command. Supports PNG, GIF,
