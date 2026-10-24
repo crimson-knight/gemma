@@ -48,39 +48,34 @@ class Gemma
       )
       end
 
-      # Copies the file into the given location.
+      # Uploads everything *io* has left as the object *id*. A `filename` in
+      # *metadata* becomes an RFC 6266 `Content-Disposition` header and a
+      # `mime_type` becomes `Content-Type`; the storage's `upload_options`
+      # are sent as extra headers.
       #
-      def upload(io : IO | UploadedFile, id : String, move = false, **upload_options)
+      # The body is buffered in memory before the PUT because SigV4 signs a
+      # hash of the payload.
+      def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
         headers = Hash(String, String).new
-        if (metadata = upload_options[:metadata]?) && metadata.is_a?(Gemma::UploadedFile::MetadataType)
-          if filename = metadata["filename"]?
-            headers["Content-Disposition"] = ContentDisposition.inline(filename.to_s)
-          end
+        if filename = metadata["filename"]?
+          headers["Content-Disposition"] = ContentDisposition.inline(filename.to_s)
+        end
+        if mime_type = metadata["mime_type"]?
+          headers["Content-Type"] = mime_type.to_s
         end
         headers["x-amz-acl"] = "public-read" if public?
-
         headers.merge!(@upload_options)
-        upload_options.each do |option_name, value|
-          next if option_name == :metadata
-          headers[option_name.to_s] = value.to_s
-        end
 
-        source = io.is_a?(UploadedFile) ? io.io : io
         body = IO::Memory.new
-        IO.copy(source, body)
+        IO.copy(io, body)
         client.put_object(bucket, object_key(id), body.to_slice, headers)
-
-        true
-      end
-
-      def upload(io : IO | UploadedFile, id : String, metadata : Gemma::UploadedFile::MetadataType, move = false, **upload_options)
-        upload(io, id, move, **(upload_options.merge(metadata: metadata)))
+        nil
       end
 
       # Returns an IO holding the whole object, rewound to position 0. The
       # HTTP connection is already closed, so the IO stays readable.
       # Raises `Gemma::FileNotFound` when the object does not exist.
-      def open(id : String, **options) : IO
+      def open(id : String) : IO
         io = IO::Memory.new
         client.get_object(bucket, object_key(id)) do |response|
           if body_io = response.body_io?
@@ -113,15 +108,9 @@ class Gemma
       end
 
       # Deletes the file.
-      def delete(id : String) : Bool
+      def delete(id : String) : Nil
         client.delete_object(bucket, object_key(id))
-      end
-
-      def clean(path)
-      end
-
-      def path(id : String)
-        object_key(id)
+        nil
       end
 
       # Returns object key with potential prefix.

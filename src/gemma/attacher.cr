@@ -307,26 +307,32 @@ class Gemma
         self.class.gemma_class
       end
 
-      # Converts a String or Hash value into an UploadedFile object and ensures
-      # it's uploaded to temporary storage.
-      #
-      #     # from JSON data
-      #     attacher.cached("{\"id\":\"...\",\"storage\":\"cache\",\"metadata\":{...}}")
-      #     #=> #<Gemma::UploadedFile>
-      #
-      #     # from Hash data
-      #     attacher.cached({ "id" => "...", "storage" => "cache", "metadata" => { ... } })
-      #     #=> #<Gemma::UploadedFile>
-      private def cached(value : String | Hash(String, String | UploadedFile::MetadataType), **options)
-        uploaded_file = uploaded_file(value)
+      # Turns a client's cached-file reference into an `UploadedFile`, after
+      # checking that the cache issued it: the storage key must be this
+      # attacher's cache, the id must have the shape of a generated location,
+      # and the file must exist in the cache. Size and MIME type are read
+      # from the stored bytes; only the original filename comes from the
+      # client. Raises `Gemma::NotCached` or `Gemma::InvalidLocation`.
+      private def cached(value : String | Hash(String, String | UploadedFile::MetadataType), **options) : UploadedFile
+        reference = CachedFileReference.parse(value.is_a?(String) ? value : value.to_json)
 
-        # reject files not uploaded to temporary storage, because otherwise
-        # attackers could hijack other users' attachments
-        unless cached?(uploaded_file)
-          raise Gemma::NotCached.new "expected cached file, got #{uploaded_file.inspect}"
+        # Files outside the cache would let one user claim another user's
+        # stored attachment.
+        unless reference.storage_key == cache_key
+          raise NotCached.new("expected a file in the #{cache_key.inspect} storage, got #{reference.storage_key.inspect}")
         end
 
-        uploaded_file
+        unless CachedFileReference.valid_id?(reference.id)
+          raise InvalidLocation.new("#{reference.id.inspect} is not a location Gemma generates")
+        end
+
+        cache_uploader = gemma_class.new(cache_key)
+        unless cache_uploader.storage.exists?(reference.id)
+          raise NotCached.new("no cached file #{reference.id.inspect}")
+        end
+
+        metadata = cache_uploader.extract_stored_metadata(reference.id, filename: reference.metadata.filename)
+        UploadedFile.new(reference.id, cache_key, metadata)
       end
 
       # Whether attached file should be uploaded to permanent storage.
