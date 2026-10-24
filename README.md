@@ -159,9 +159,11 @@ storage.url("photo.jpg", expires_in: 1.hour)
 
 ### ORM usage example
 
-#### Grant (Recommended - Full Support)
+#### Grant
 
-Grant ORM now has full integration support with comprehensive features:
+`require "gemma/grant"` adds attachments to Grant models. Each macro
+declares its `<name>_data` column (TEXT, holding the file's JSON), so the
+table needs that column and the model does not declare it.
 
 <!-- The block below is compiled by spec/probes/json_any_probe_spec.cr. -->
 ```crystal
@@ -169,42 +171,68 @@ require "gemma/grant"
 
 class User < Grant::Base
   include Gemma::Grant::Attachable
-  
-  column id : Int64, primary: true
-  column name : String
-  column avatar_data : JSON::Any?
-  column documents_data : JSON::Any?
-  
-  # Single file attachment
-  has_one_attached :avatar
-  
-  # Multiple file attachments  
-  has_many_attached :documents
-end
-
-# Usage
-user = User.new(name: "John")
-user.avatar = File.open("avatar.jpg")
-user.documents = [File.open("doc1.pdf"), File.open("doc2.pdf")]
-user.save
-
-# Access attachments
-puts user.avatar_url
-user.documents.each { |doc| puts doc.url }
-
-# With validations
-class ValidatedUser < Grant::Base
-  include Gemma::Grant::Attachable
   include Gemma::Grant::AttachmentValidators
-  
+
+  column id : Int64, primary: true
+  column name : String?
+
+  # Single file attachment; declares `avatar_data`.
   has_one_attached :avatar
-  
-  validate_file_size_of :avatar, maximum: 5.megabytes
-  validate_content_type_of :avatar, accept: ["image/jpeg", "image/png"]
+
+  # Multiple file attachments; declares `documents_data`.
+  has_many_attached :documents
+
+  validates_attachment_size_of :avatar, maximum: 5_000_000
+  validates_attachment_type_of :avatar, accept: ["image/jpeg", "image/png"]
+  validates_attachment_count_of :documents, maximum: 10
 end
+
+user = User.new(name: "John")
+user.avatar = File.open("avatar.jpg")          # cached now
+user.documents = [File.open("doc1.pdf"), File.open("doc2.pdf")]
+user.save                                      # promoted, column written
+
+user.avatar_url
+user.documents.map(&.url)
 ```
 
-See [GRANT_COMPLETE_GUIDE.md](GRANT_COMPLETE_GUIDE.md) for comprehensive documentation.
+The migration adds one TEXT column per attachment:
+
+```sql
+ALTER TABLE users ADD COLUMN avatar_data TEXT;
+ALTER TABLE users ADD COLUMN documents_data TEXT;
+```
+
+What happens when:
+
+- **Assigning** (`user.avatar = io`, an Amber multipart part, or a
+  `Gemma::CachedFileReference` from a re-rendered form) uploads to the cache
+  only. A reference is accepted only for a file the cache holds, and its size
+  and type are read again from the bytes.
+- **Saving** promotes the cached file to the store in `before_save` and
+  writes the column in the same statement.
+- **After the save commits**, the replaced file, removed files and the cached
+  copy are deleted. If the save rolls back, or a callback raises, the
+  promoted file is deleted and the stored one is kept.
+- **`remove_document(file)`, `clear_documents`, `user.avatar = nil`** change
+  only the record; files are deleted after the next save commits.
+- **Destroying** deletes the stored files after the destroy commits.
+- **Setting `avatar_data` directly** is refused at save, because it would
+  skip the checks assignment makes.
+
+A cached reference works like a bearer token: whoever holds its id can
+attach that cached file. The ids are 128 random bits, so keep them in the
+form that uploaded the file and out of logs and URLs. Files cached for a form
+that is never saved stay in the cache; expire them with a storage lifecycle
+rule on the cache prefix.
+
+Validators (`validates_attachment_presence_of`, `_size_of`, `_type_of`,
+`_dimensions_of`, `_count_of`) are Grant rules and take `on:`, `if:`,
+`unless:` and `strict:`. A file whose size, type or dimensions Gemma could
+not read fails the rule that needs them.
+
+`has_many_attached :documents, singular: document_file` names the helpers
+`add_document_file` and `remove_document_file`.
 
 #### Other ORMs
 

@@ -6,9 +6,9 @@ docs_entries:
   - src/gemma/grant.cr
 notes:
   - symbol: Gemma::Grant::Attachable.has_one_attached
-    text: "Require gemma/grant and include Gemma::Grant::Attachable in a Grant model. has_one_attached reads and writes a nilable Gemma::UploadedFile <name>_data field (Grant::Converters::Json(Gemma::UploadedFile, String), TEXT), then adds a nilable UploadedFile getter, a URL method, and save/destroy hooks."
+    text: "Require gemma/grant and include Gemma::Grant::Attachable in a Grant model. has_one_attached declares a nilable Gemma::UploadedFile <name>_data column (TEXT, Gemma::Grant::AttachmentConverter); do not declare it yourself, then adds a nilable UploadedFile getter, a URL method, and save/destroy hooks."
   - symbol: Gemma::Grant::Attachable.has_many_attached
-    text: "has_many_attached reads and writes a nilable Array(Gemma::UploadedFile) in the plural <name>_data field. It adds an UploadedFile array getter, add/remove/clear helpers, and save/destroy hooks."
+    text: "has_many_attached declares a nilable Array(Gemma::UploadedFile) <name>_data column (TEXT, Gemma::Grant::AttachmentListConverter). It adds an UploadedFile array getter, add/remove/clear helpers, and save/destroy hooks."
   - symbol: Gemma::Attacher#attach_cached
     text: "Gemma::Attacher#attach_cached(io) uploads an IO to the cache storage. #attach(io, storage = store_key) returns Gemma::UploadedFile | Nil, and #file is nilable until an upload is attached."
   - symbol: Gemma::UploadedFile#url

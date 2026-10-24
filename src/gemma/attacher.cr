@@ -90,8 +90,17 @@ module Gemma
       end
 
       # Caches a multipart part (anything shaped like `Amber::Router::File`).
+      # A union of the accepted types (an Array of mixed uploads and
+      # references, say) arrives here too, so each type is sent to its own
+      # overload.
       def attach_cached(part, **options)
-        attach(part, cache_key, **options)
+        if part.is_a?(IO) || part.nil?
+          attach_cached(part, **options)
+        elsif part.is_a?(CachedFileReference) || part.is_a?(UploadedFile)
+          attach_cached(part, **options)
+        else
+          attach(part, cache_key, **options)
+        end
       end
 
       # An `UploadedFile` can be deserialized from client JSON, so it goes
