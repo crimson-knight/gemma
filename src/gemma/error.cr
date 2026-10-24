@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   # Base class for every error Gemma raises.
   class Error < Exception
   end

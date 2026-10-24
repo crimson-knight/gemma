@@ -1,6 +1,6 @@
 require "json"
 
-class Gemma
+module Gemma
   # A client's claim that it holds a file Gemma cached earlier: the JSON a
   # form sends back (`{"id": "...", "storage_key": "cache", "metadata": {...}}`)
   # so a re-rendered form does not upload the file again.

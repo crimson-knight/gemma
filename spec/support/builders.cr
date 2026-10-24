@@ -20,8 +20,8 @@ def image(basename : String = "300x300.png") : File
   File.open(File.join(SPEC_SUPPORT_DIRECTORY, basename))
 end
 
-def uploader(storage_key : String = "store") : Gemma
-  Gemma.new(storage_key)
+def uploader(storage_key : String = "store") : Gemma::Uploader
+  Gemma::Uploader.new(storage_key)
 end
 
 def memory_storage(storage_key : String) : Gemma::Storage::Memory

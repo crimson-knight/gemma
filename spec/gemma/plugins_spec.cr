@@ -1,59 +1,74 @@
 require "../spec_helper"
+require "../../src/gemma/plugins/store_dimensions"
 
-private module FooPlugin
-  module ClassMethods
-    def foo
-      "plugin_foo"
-    end
-  end
+private SNIPPET_PREFIX = <<-CRYSTAL
+  require "gemma"
+  require "gemma/plugins/store_dimensions"
+  require "gemma/plugins/add_metadata"
+  require "gemma/plugins/column"
 
-  module InstanceMethods
-    def foo
-      "plugin_foo"
-    end
-  end
+  CRYSTAL
+
+private class PluginsSpecUploader < Gemma::Uploader
+  include Gemma::Plugins::StoreDimensions
 end
 
-private class NonPluginUploader < Gemma
-  module ClassMethods
-    def foo
-      "foo"
-    end
+describe "Gemma plugins" do
+  before_each { reset_storages }
+
+  it "are modules an uploader subclass includes" do
+    PluginsSpecUploader.new("store").is_a?(Gemma::Plugins::StoreDimensions).should be_true
+    Gemma::Uploader.new("store").is_a?(Gemma::Plugins::StoreDimensions).should be_false
   end
 
-  module InstanceMethods
-    def foo
-      "foo"
-    end
+  it "give each uploader its own attacher" do
+    PluginsSpecUploader::Attacher.uploader_class.should eq(PluginsSpecUploader)
+    Gemma::Attacher.uploader_class.should eq(Gemma::Uploader)
+
+    attacher = PluginsSpecUploader::Attacher.new
+    attacher.attach(image)
+    attacher.file.try(&.width).should eq(300)
   end
 
-  extend ClassMethods
-  include InstanceMethods
-end
+  describe "the removed load_plugin API" do
+    it "names the module to include" do
+      result = SnippetCompiler.check(SNIPPET_PREFIX + <<-CRYSTAL)
+        class AvatarUploader < Gemma::Uploader
+          load_plugin Gemma::Plugins::StoreDimensions
+        end
+        CRYSTAL
 
-private class PluginUploader < NonPluginUploader
-  load_plugin FooPlugin
-  finalize_plugins!
-end
-
-describe "Gemma.load_plugin" do
-  describe "an uploader without the plugin" do
-    it "responds to .foo with \"foo\"" do
-      NonPluginUploader.foo.should eq("foo")
+      result.should_fail_with("include Gemma::Plugins::StoreDimensions")
     end
 
-    it "responds to #foo with \"foo\"" do
-      NonPluginUploader.new("store").foo.should eq("foo")
-    end
-  end
+    it "names the custom_metadata method for AddMetadata" do
+      result = SnippetCompiler.check(SNIPPET_PREFIX + <<-CRYSTAL)
+        class DocumentUploader < Gemma::Uploader
+          load_plugin Gemma::Plugins::AddMetadata
+        end
+        CRYSTAL
 
-  describe "an uploader with the plugin" do
-    it "responds to .foo with the plugin's value" do
-      PluginUploader.foo.should eq("plugin_foo")
+      result.should_fail_with("def custom_metadata(io : IO, metadata : Gemma::Metadata)")
     end
 
-    it "responds to #foo with the plugin's value" do
-      PluginUploader.new("store").foo.should eq("plugin_foo")
+    it "explains that finalize_plugins! has nothing left to do" do
+      result = SnippetCompiler.check(SNIPPET_PREFIX + <<-CRYSTAL)
+        class DocumentUploader < Gemma::Uploader
+          finalize_plugins!
+        end
+        CRYSTAL
+
+      result.should_fail_with("Delete the call")
+    end
+
+    it "explains that the Column plugin is built in" do
+      result = SnippetCompiler.check(SNIPPET_PREFIX + <<-CRYSTAL)
+        class DocumentUploader < Gemma::Uploader
+          include Gemma::Plugins::Column
+        end
+        CRYSTAL
+
+      result.should_fail_with("Attacher.from_column")
     end
   end
 end

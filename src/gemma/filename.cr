@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   # Cleans a client-supplied filename before Gemma stores it as metadata or
   # sends it in a `Content-Disposition` header.
   module Filename

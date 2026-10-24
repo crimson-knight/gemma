@@ -2,7 +2,7 @@ require "digest/sha256"
 require "http/headers"
 require "openssl/hmac"
 
-class Gemma
+module Gemma
   module Storage
     class S3 < Storage::Base
       # Signs requests with AWS Signature Version 4 (`AWS4-HMAC-SHA256`).

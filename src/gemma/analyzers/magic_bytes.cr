@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   module Analyzers
     # MIME types a browser runs as active content when it opens them: HTML,
     # XHTML, XML, SVG and JavaScript.

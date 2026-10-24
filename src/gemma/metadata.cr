@@ -1,6 +1,6 @@
 require "json"
 
-class Gemma
+module Gemma
   # What Gemma knows about a stored file. Gemma reads `size`, `mime_type`,
   # `width` and `height` from the file's bytes; `filename` is the client's
   # original name (sanitized); `extra` holds an app's custom fields.
