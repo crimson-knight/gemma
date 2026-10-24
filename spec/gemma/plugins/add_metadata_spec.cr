@@ -4,11 +4,6 @@ require "../../../src/gemma/plugins/add_metadata"
 class GemmaWithAddMetadata < Gemma
   load_plugin Gemma::Plugins::AddMetadata
 
-  # Makes Gemma#extract_metadata public for the specs.
-  def extract_metadata(io : IO, **options) : Gemma::UploadedFile::MetadataType
-    super
-  end
-
   add_metadata :custom, -> {
     "value"
   }
@@ -16,10 +11,14 @@ class GemmaWithAddMetadata < Gemma
   add_metadata :multiple_values, -> {
     text = io.gets_to_end
 
-    Gemma::UploadedFile::MetadataType{
+    {
       "custom_1" => text,
       "custom_2" => text * 2,
     }
+  }
+
+  add_metadata :spoofed_size, -> {
+    {"size" => "1"}
   }
 
   finalize_plugins!
@@ -30,37 +29,25 @@ private def metadata_uploader : GemmaWithAddMetadata
 end
 
 describe Gemma::Plugins::AddMetadata do
-  describe "Gemma.add_metadata" do
-    context "with a single value" do
-      it "adds declared metadata" do
-        metadata = metadata_uploader.extract_metadata(fakeio)
+  before_each { reset_storages }
 
-        metadata["custom"].should eq("value")
-        metadata["size"].should be_a(Int32)
-      end
+  it "adds a single declared value" do
+    uploaded_file = metadata_uploader.upload(fakeio("file"))
 
-      it "adds the metadata to the UploadedFile" do
-        uploaded_file = metadata_uploader.upload(fakeio)
+    uploaded_file.metadata.extra["custom"].should eq("value")
+  end
 
-        uploaded_file.metadata["custom"].should eq("value")
-      end
-    end
+  it "adds a hash of values computed from the upload's bytes" do
+    uploaded_file = metadata_uploader.upload(fakeio("file"))
 
-    context "with a hash of values" do
-      it "adds declared metadata" do
-        metadata = metadata_uploader.extract_metadata(fakeio)
+    uploaded_file.metadata.extra["custom_1"].should eq("file")
+    uploaded_file.metadata.extra["custom_2"].should eq("filefile")
+  end
 
-        metadata["custom_1"].should eq(fakeio.gets_to_end)
-        metadata["custom_2"].should eq(fakeio.gets_to_end * 2)
-        metadata["size"].should be_a(Int32)
-      end
+  it "cannot set a built-in field" do
+    uploaded_file = metadata_uploader.upload(fakeio("file"))
 
-      it "adds the metadata to the UploadedFile" do
-        uploaded_file = metadata_uploader.upload(fakeio)
-
-        uploaded_file.metadata["custom_1"].should eq(fakeio.gets_to_end)
-        uploaded_file.metadata["custom_2"].should eq(fakeio.gets_to_end * 2)
-      end
-    end
+    uploaded_file.size.should eq(4)
+    uploaded_file.metadata.extra.has_key?("size").should be_false
   end
 end

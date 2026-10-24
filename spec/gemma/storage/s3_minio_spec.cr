@@ -61,7 +61,7 @@ require "../../spec_helper"
     it "uploads, checks, reads, presigns and deletes an object" do
       with_minio_storage do |_settings, _bucket, storage|
         content = "binary\u0000payload ✓ #{Random::Secure.hex(8)}"
-        metadata = Gemma::UploadedFile::MetadataType{"filename" => "résumé photo.jpg"}
+        metadata = Gemma::Metadata.new(filename: "résumé photo.jpg")
         id = "nested dir/résumé photo.jpg"
 
         storage.exists?(id).should be_false

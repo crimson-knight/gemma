@@ -53,17 +53,23 @@ class Gemma
       # sets an RFC 6266 `Content-Disposition` header and a `mime_type` sets
       # `Content-Type`, replacing any configured header of the same name.
       #
+      # Files a browser would run (`Analyzers::ACTIVE_CONTENT_TYPES`, such as SVG) get
+      # `Content-Disposition: attachment` whatever their filename.
+      #
       # The body is buffered in memory before the PUT because SigV4 signs a
       # hash of the payload.
-      def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
+      def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
         headers = @upload_options.dup
         headers["x-amz-acl"] = "public-read" if public?
-        if filename = metadata["filename"]?
-          set_header(headers, "Content-Disposition", ContentDisposition.inline(filename.to_s))
+        mime_type = metadata.mime_type
+        # A browser runs script inside SVG (and HTML or XML) opened inline,
+        # so such files are always served as downloads.
+        if mime_type && Analyzers::ACTIVE_CONTENT_TYPES.includes?(mime_type)
+          set_header(headers, "Content-Disposition", ContentDisposition.attachment(metadata.filename))
+        elsif filename = metadata.filename
+          set_header(headers, "Content-Disposition", ContentDisposition.inline(filename))
         end
-        if mime_type = metadata["mime_type"]?
-          set_header(headers, "Content-Type", mime_type.to_s)
-        end
+        set_header(headers, "Content-Type", mime_type) if mime_type
 
         body = IO::Memory.new
         IO.copy(io, body)

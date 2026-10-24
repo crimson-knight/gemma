@@ -63,9 +63,9 @@ describe "fs_promote probe" do
     end
   end
 
-  it_reproduces_known_defect "keeps the client's filename for an Amber-style upload", fixed_in: "PR 5 (upload objects)" do
-    # A snippet, because passing the upload object itself does not compile
-    # until Gemma accepts it.
+  it "keeps the client's filename for an Amber-style upload" do
+    # A snippet, so the probe also proves the upload object compiles as an
+    # argument.
     result = SnippetCompiler.check(AMBER_UPLOAD_SNIPPET)
     result.should_succeed
 

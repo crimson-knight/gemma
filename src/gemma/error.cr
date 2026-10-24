@@ -39,4 +39,9 @@ class Gemma
   # Raised when an analyzer ran but could not read the file.
   class AnalyzerFailed < Error
   end
+
+  # Raised while an upload streams, as soon as it passes the uploader's
+  # `max_size`. Nothing is left in storage.
+  class FileTooLarge < Error
+  end
 end

@@ -10,11 +10,6 @@ shards:
     version: 0.14.0
     checksum: git-tree:3f3d464ddf96815f507434082245eb632ca65bf4
 
-  fastimage:
-    git: https://github.com/jetrockets/fastimage.cr.git
-    version: 1.2.1+git.commit.d12081fb7bb468725f6191159e018093dfccfea4
-    checksum: git-tree:31aeead42d386392395235c1670d03b760e0c894
-
   grant:
     git: https://github.com/crimson-knight/grant.git
     version: 0.23.4+git.commit.da1e06161148f156dbce262a4a4efcb39cba5ba4

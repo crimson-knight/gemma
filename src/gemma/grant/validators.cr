@@ -77,9 +77,8 @@ class Gemma
           file = self.{{ name.id }}
           return unless file
 
-          # Check if dimensions are in metadata
-          width_actual = file.metadata["width"]?.try(&.to_i)
-          height_actual = file.metadata["height"]?.try(&.to_i)
+          width_actual = file.width
+          height_actual = file.height
 
           return unless width_actual && height_actual
 
