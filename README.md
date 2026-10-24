@@ -131,6 +131,7 @@ storage.url("photo.jpg", expires_in: 1.hour)
 
 Grant ORM now has full integration support with comprehensive features:
 
+<!-- The block below is compiled by spec/probes/json_any_probe_spec.cr. -->
 ```crystal
 require "gemma/grant"
 

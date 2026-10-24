@@ -3,40 +3,27 @@ name: specs
 on:
   push:
     branches:
-    - master
+      - master
   pull_request:
   schedule:
-    - cron: "0 3 * * 1" # Every monday at 3 AM
+    - cron: "0 3 * * 1" # Every Monday at 3 AM
 
 jobs:
   specs:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest]
-        crystal: [latest, nightly]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Install Crystal
-        uses: oprypin/install-crystal@v1
-        with:
-          crystal: ${{ matrix.crystal }}
-
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install ImageMagick
-        # The dimension specs call ImageMagick's identify.
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - name: Build the pinned toolchain image
+        run: docker build --file ci/Dockerfile --tag gemma-ci .
 
-      - name: Install dependencies
-        run: shards install
-        env:
-          SHARDS_OPTS: --ignore-crystal-version
+      - name: Install dependencies from the committed lock
+        run: docker run --rm -v "$PWD":/app gemma-ci minecart install --frozen --skip-postinstall --skip-ai-docs --skip-ai-assistant
 
       - name: Run specs
-        run: crystal spec
+        run: docker run --rm -v "$PWD":/app gemma-ci crystal-alpha spec
 
       - name: Start MinIO
         # Pinned by digest: MinIO RELEASE.2026-10-23T20-06-51Z (Chainguard build).
@@ -53,7 +40,10 @@ jobs:
           exit 1
 
       - name: Run S3 round-trip specs against MinIO
-        run: crystal spec spec/gemma/storage/s3_minio_spec.cr
+        run: |
+          docker run --rm --network host -v "$PWD":/app \
+            -e GEMMA_S3_TEST_ENDPOINT -e GEMMA_S3_TEST_ACCESS_KEY -e GEMMA_S3_TEST_SECRET_KEY \
+            gemma-ci crystal-alpha spec spec/gemma/storage/s3_minio_spec.cr
         env:
           GEMMA_S3_TEST_ENDPOINT: http://localhost:9000
           GEMMA_S3_TEST_ACCESS_KEY: gemma-spec # secret-scan-gate:allow (local MinIO test credential)

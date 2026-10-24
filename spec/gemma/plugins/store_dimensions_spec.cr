@@ -12,7 +12,7 @@ class GemmaWithStoreDimensionsUsingFastImage < Gemma
   load_plugin(Gemma::Plugins::StoreDimensions,
     analyzer: Gemma::Plugins::StoreDimensions::Tools::FastImage)
 
-  # redefine Gemma#extract_metadata to make it public
+  # Makes Gemma#extract_metadata public for the specs.
   def extract_metadata(io : IO, **options) : Gemma::UploadedFile::MetadataType
     super
   end
@@ -20,55 +20,38 @@ class GemmaWithStoreDimensionsUsingFastImage < Gemma
   finalize_plugins!
 end
 
-Spectator.describe Gemma::Plugins::StoreDimensions do
-  include FileHelpers
-  include GemmaHelpers
+describe Gemma::Plugins::StoreDimensions do
+  before_each { reset_storages }
 
-  before_each do
-    clear_storages
-  end
-
-  after_each do
-    clear_storages
-  end
-
-  describe "primary purpose" do
-    let(uploader) {
-      GemmaWithStoreDimensionsUsingFastImage.new("store")
-    }
-
+  describe "#extract_metadata" do
     it "stores width and height in metadata" do
-      metadata = uploader.extract_metadata(image("320x180.jpg"))
+      metadata = GemmaWithStoreDimensionsUsingFastImage.new("store").extract_metadata(image("320x180.jpg"))
 
-      expect(metadata["width"]).to eq(320)
-      expect(metadata["height"]).to eq(180)
+      metadata["width"].should eq(320)
+      metadata["height"].should eq(180)
     end
   end
 
-  describe "fastimage in analyzer" do
-    subject { GemmaWithStoreDimensionsUsingFastImage }
-
+  context "with the fastimage analyzer" do
     it "extracts image dimensions" do
-      expect(subject.extract_dimensions(image)).to eq({300, 300})
+      GemmaWithStoreDimensionsUsingFastImage.extract_dimensions(image).should eq({300, 300})
     end
 
     it "fails with missing image data" do
       expect_raises(Gemma::Error) do
-        subject.extract_dimensions(fakeio)
+        GemmaWithStoreDimensionsUsingFastImage.extract_dimensions(fakeio)
       end
     end
   end
 
-  describe "identify analyzer" do
-    subject { GemmaWithStoreDimensionsUsingIdentify }
-
+  context "with the identify analyzer" do
     it "extracts image dimensions" do
-      expect(subject.extract_dimensions(image)).to eq({300, 300})
+      GemmaWithStoreDimensionsUsingIdentify.extract_dimensions(image).should eq({300, 300})
     end
 
     it "fails with missing image data" do
       expect_raises(Gemma::Error) do
-        subject.extract_dimensions(fakeio)
+        GemmaWithStoreDimensionsUsingIdentify.extract_dimensions(fakeio)
       end
     end
   end

@@ -1,0 +1,32 @@
+version: 2.0
+shards:
+  ameba:
+    git: https://github.com/crystal-ameba/ameba.git
+    version: 1.7.0-dev+git.commit.cdd58b34b0d8a9c785d67183a7a8f07541549e55
+    checksum: git-tree:5fe9fbff073fc9a41923f19d8a43b9b35a528ac8
+
+  db:
+    git: https://github.com/crystal-lang/crystal-db.git
+    version: 0.14.0
+    checksum: git-tree:3f3d464ddf96815f507434082245eb632ca65bf4
+
+  fastimage:
+    git: https://github.com/jetrockets/fastimage.cr.git
+    version: 1.2.1+git.commit.d12081fb7bb468725f6191159e018093dfccfea4
+    checksum: git-tree:31aeead42d386392395235c1670d03b760e0c894
+
+  grant:
+    git: https://github.com/crimson-knight/grant.git
+    version: 0.23.4+git.commit.da1e06161148f156dbce262a4a4efcb39cba5ba4
+    checksum: git-tree:213b5f908e64b0763988aae82976c5a545d06529
+
+  sqlite3:
+    git: https://github.com/crystal-lang/crystal-sqlite3.git
+    version: 0.23.0+git.commit.271a1314a6c64e6c3d98942a39bf1b3e8326b190
+    checksum: git-tree:cd690e6e4af55046e3064c2d4ab1d17852be3fec
+
+  webmock:
+    git: https://github.com/manastech/webmock.cr.git
+    version: 0.14.0+git.commit.42b347cdd64e13193e46167a03593944ae2b3d20
+    checksum: git-tree:f35a0c6ac5700bd920c5cdf1548024438bb3aa6b
+
