@@ -5,7 +5,7 @@ require "../grant_helper"
 describe "persist probe" do
   before_each { reset_storages }
 
-  it_reproduces_known_defect "writes has_one_attached's column in the same save", fixed_in: "PR 7 (Grant layer)" do
+  it "writes has_one_attached's column in the same save" do
     user = IntegrationUser.new
     user.avatar = IO::Memory.new("hello")
     user.save || raise "setup: save failed"
@@ -15,7 +15,7 @@ describe "persist probe" do
     reloaded.avatar.try(&.storage_key).should eq("store")
   end
 
-  it_reproduces_known_defect "writes has_many_attached's column in the same save", fixed_in: "PR 7 (Grant layer)" do
+  it "writes has_many_attached's column in the same save" do
     post = IntegrationPost.new
     post.images = [IO::Memory.new("one"), IO::Memory.new("two")]
     post.save || raise "setup: save failed"
@@ -23,7 +23,7 @@ describe "persist probe" do
     IntegrationPost.find!(post.id).images.size.should eq(2)
   end
 
-  it_reproduces_known_defect "deletes the cached copy once the file is promoted", fixed_in: "PR 7 (Grant layer)" do
+  it "deletes the cached copy once the file is promoted" do
     user = IntegrationUser.new
     user.avatar = IO::Memory.new("hello")
     user.save || raise "setup: save failed"
@@ -47,7 +47,7 @@ describe "persist probe" do
     profile.save.should be_false
   end
 
-  it_reproduces_known_defect "rejects a file of unknown type when only images are accepted", fixed_in: "PR 7 (validators)" do
+  it "rejects a file of unknown type when only images are accepted" do
     profile = IntegrationProfile.new
     profile.cover = IO::Memory.new("\u0000\u0001 bytes no analyzer recognizes")
 
