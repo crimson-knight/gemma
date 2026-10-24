@@ -217,6 +217,14 @@ What happens when:
 - **`remove_document(file)`, `clear_documents`, `user.avatar = nil`** change
   only the record; files are deleted after the next save commits.
 - **Destroying** deletes the stored files after the destroy commits.
+- **Setting `avatar_data` directly** is refused at save, because it would
+  skip the checks assignment makes.
+
+A cached reference works like a bearer token: whoever holds its id can
+attach that cached file. The ids are 128 random bits, so keep them in the
+form that uploaded the file and out of logs and URLs. Files cached for a form
+that is never saved stay in the cache; expire them with a storage lifecycle
+rule on the cache prefix.
 
 Validators (`validates_attachment_presence_of`, `_size_of`, `_type_of`,
 `_dimensions_of`, `_count_of`) are Grant rules and take `on:`, `if:`,
