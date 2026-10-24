@@ -25,7 +25,10 @@ def uploader(storage_key : String = "store") : Gemma
 end
 
 def memory_storage(storage_key : String) : Gemma::Storage::Memory
-  Gemma.settings.storages[storage_key].as(Gemma::Storage::Memory)
+  storage = Gemma.settings.storages[storage_key]
+  return storage if storage.is_a?(Gemma::Storage::Memory)
+
+  raise "storage #{storage_key.inspect} is not a Memory storage"
 end
 
 # Points every spec storage at a fresh `Memory` storage.

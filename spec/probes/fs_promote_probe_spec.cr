@@ -20,7 +20,7 @@ private AMBER_UPLOAD_SNIPPET = <<-CRYSTAL
 # storages wrote the object's `inspect` string, a `location:` escaped the
 # root, and `upload` closed the caller's file.
 describe "fs_promote probe" do
-  it_reproduces_known_defect "promotes a FileSystem cache file to FileSystem store byte for byte", fixed_in: "PR 4 (IO-only storages)" do
+  it "promotes a FileSystem cache file to FileSystem store byte for byte" do
     with_file_system_storages do |_root|
       content = Random::Secure.random_bytes(2 * 1024 * 1024)
       attacher = Gemma::Attacher.new
@@ -33,23 +33,23 @@ describe "fs_promote probe" do
     end
   end
 
-  it_reproduces_known_defect "refuses a location that climbs out of the storage root", fixed_in: "PR 4 (storage containment)" do
+  it "refuses a location that climbs out of the storage root" do
     with_file_system_storages do |root|
       escaped_name = "escaped-#{Random::Secure.hex(4)}.txt"
       escaped_path = File.expand_path(File.join(root, "store", "../..", escaped_name))
       begin
-        expect_raises(Gemma::Error) do
+        expect_raises(Gemma::InvalidLocation) do
           Gemma.upload(IO::Memory.new("pwn"), "store", location: "../../#{escaped_name}")
         end
         File.exists?(escaped_path).should be_false
       ensure
-        # While the defect is open the upload lands outside the root.
+        # Cleans up if a regression ever writes outside the root again.
         File.delete?(escaped_path)
       end
     end
   end
 
-  it_reproduces_known_defect "leaves the caller's file open after upload", fixed_in: "PR 4 (IO-only storages)" do
+  it "leaves the caller's file open after upload" do
     with_file_system_storages do |_root|
       file = tempfile("x", "photo.jpg")
       begin

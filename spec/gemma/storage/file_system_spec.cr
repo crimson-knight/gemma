@@ -101,34 +101,45 @@ describe Gemma::Storage::FileSystem do
       end
     end
 
-    context "with move: true" do
-      it "moves movable files" do
-        with_root do |root|
-          storage = file_system_storage(root)
-          file = tempfile("file")
-          storage.upload(file, "foo", move: true)
+    it "leaves the source IO open" do
+      with_root do |root|
+        source = tempfile("file")
+        file_system_storage(root).upload(source, "foo.jpg")
 
-          storage.open("foo").gets_to_end.should eq("file")
-          File.exists?(file.path).should be_false
-        end
+        source.closed?.should be_false
+        source.close
       end
+    end
 
-      it "creates subdirectories" do
-        with_root do |root|
-          storage = file_system_storage(root)
-          storage.upload(tempfile("file"), "a/a/a.jpg", move: true)
+    it "refuses an id that climbs out of the directory and writes nothing" do
+      with_root do |root|
+        storage = file_system_storage(root, prefix: "store")
 
-          storage.exists?("a/a/a.jpg").should be_true
-        end
+        expect_raises(Gemma::InvalidLocation) { storage.upload(fakeio("pwn"), "../escaped.txt") }
+        File.exists?(File.join(root, "escaped.txt")).should be_false
       end
+    end
+  end
 
-      it "sets 0o600 file permissions" do
-        with_root do |root|
-          storage = file_system_storage(root, permissions: 0o600)
-          storage.upload(tempfile("file"), "bar.jpg", move: true)
+  describe "#open" do
+    it "opens the stored file for reading" do
+      with_root do |root|
+        storage = file_system_storage(root)
+        storage.upload(fakeio("content"), "foo.txt")
 
-          file_permissions(storage.open("bar.jpg").path).should eq(0o600)
-        end
+        storage.open("foo.txt").gets_to_end.should eq("content")
+      end
+    end
+
+    it "raises Gemma::FileNotFound for a missing file" do
+      with_root do |root|
+        expect_raises(Gemma::FileNotFound) { file_system_storage(root).open("missing.txt") }
+      end
+    end
+
+    it "refuses an id that climbs out of the directory" do
+      with_root do |root|
+        expect_raises(Gemma::InvalidLocation) { file_system_storage(root).open("../../../../etc/hosts") }
       end
     end
   end
@@ -161,6 +172,15 @@ describe Gemma::Storage::FileSystem do
       end
     end
 
+    it "percent-encodes each segment, so a browser cannot turn %2e%2e into .." do
+      with_root do |root|
+        storage = file_system_storage(root, prefix: "cache")
+
+        storage.url("%2e%2e/store/victim.jpg").should eq("/cache/%252e%252e/store/victim.jpg")
+        storage.url("a b.jpg").should eq("/cache/a%20b.jpg")
+      end
+    end
+
     it "accepts a host with a prefix" do
       with_root do |root|
         storage = file_system_storage(root, prefix: "prefix")
@@ -175,6 +195,82 @@ describe Gemma::Storage::FileSystem do
     it "returns the path to the file" do
       with_root do |root|
         file_system_storage(root).path("foo/bar/baz").should eq("#{root}/foo/bar/baz")
+      end
+    end
+
+    it "refuses an id that reaches outside through a symlinked directory" do
+      with_root do |root|
+        outside = temporary_root
+        Dir.mkdir_p(outside)
+        File.write(File.join(outside, "secret.txt"), "secret")
+        begin
+          storage = file_system_storage(root, prefix: "cache")
+          File.symlink(outside, File.join(storage.expanded_directory, "link"))
+
+          expect_raises(Gemma::InvalidLocation) { storage.open("link/secret.txt") }
+          expect_raises(Gemma::InvalidLocation) { storage.upload(fakeio("pwn"), "link/planted.txt") }
+          expect_raises(Gemma::InvalidLocation) { storage.delete("link/secret.txt") }
+          File.exists?(File.join(outside, "planted.txt")).should be_false
+          File.exists?(File.join(outside, "secret.txt")).should be_true
+        ensure
+          FileUtils.rm_rf(outside)
+        end
+      end
+    end
+
+    it "refuses a symlinked file that points outside" do
+      with_root do |root|
+        storage = file_system_storage(root)
+        File.symlink("/etc/hosts", File.join(storage.expanded_directory, "hosts"))
+
+        expect_raises(Gemma::InvalidLocation) { storage.open("hosts") }
+      end
+    end
+
+    it "keeps a path that goes up and back down inside the directory" do
+      with_root do |root|
+        file_system_storage(root).path("a/../b.txt").should eq("#{root}/b.txt")
+      end
+    end
+
+    {"../outside.txt", "a/../../outside.txt", "/etc/hosts", "", ".", "a/\0b"}.each do |escaping_id|
+      it "raises Gemma::InvalidLocation for #{escaping_id.inspect}" do
+        with_root do |root|
+          expect_raises(Gemma::InvalidLocation) { file_system_storage(root).path(escaping_id) }
+        end
+      end
+    end
+  end
+
+  describe "#delete" do
+    it "deletes the file and the directories it leaves empty, but never the storage directory" do
+      with_root do |root|
+        storage = file_system_storage(root, prefix: "store")
+        storage.upload(fakeio, "a/b/file.txt")
+
+        storage.delete("a/b/file.txt")
+
+        storage.exists?("a/b/file.txt").should be_false
+        Dir.exists?(File.join(storage.expanded_directory, "a")).should be_false
+        Dir.exists?(storage.expanded_directory).should be_true
+      end
+    end
+
+    it "keeps a directory that still holds other files" do
+      with_root do |root|
+        storage = file_system_storage(root)
+        storage.upload(fakeio, "a/one.txt")
+        storage.upload(fakeio, "a/two.txt")
+
+        storage.delete("a/one.txt")
+
+        storage.exists?("a/two.txt").should be_true
+      end
+    end
+
+    it "does nothing for a missing file" do
+      with_root do |root|
+        file_system_storage(root).delete("missing.txt")
       end
     end
   end
