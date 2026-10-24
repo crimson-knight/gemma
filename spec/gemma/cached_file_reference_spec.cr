@@ -62,6 +62,23 @@ describe "Gemma::Attacher#attach_cached with a cached file reference" do
     attacher.file.try(&.id).should eq(cached.id)
   end
 
+  it "checks a deserialized UploadedFile like a client reference" do
+    stored = Gemma.upload(fakeio, "store")
+    forged = Gemma::UploadedFile.from_json(%({"id":"#{stored.id}","storage_key":"store","metadata":{}}))
+
+    expect_raises(Gemma::NotCached) { Gemma::Attacher.new.attach_cached(forged) }
+  end
+
+  it "re-reads the metadata of a cached UploadedFile instead of trusting it" do
+    cached = Gemma.upload(fakeio("cached bytes"), "cache")
+    forged = Gemma::UploadedFile.from_json(%({"id":"#{cached.id}","storage_key":"cache","metadata":{"size":1}}))
+    attacher = Gemma::Attacher.new
+
+    attacher.attach_cached(forged)
+
+    attacher.file.try(&.size).should eq("cached bytes".bytesize)
+  end
+
   it "refuses a file in permanent storage" do
     stored = Gemma.upload(fakeio, "store")
 

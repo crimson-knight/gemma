@@ -48,23 +48,22 @@ class Gemma
       )
       end
 
-      # Uploads everything *io* has left as the object *id*. A `filename` in
-      # *metadata* becomes an RFC 6266 `Content-Disposition` header and a
-      # `mime_type` becomes `Content-Type`; the storage's `upload_options`
-      # are sent as extra headers.
+      # Uploads everything *io* has left as the object *id*. The storage's
+      # `upload_options` are sent as headers; a `filename` in *metadata* then
+      # sets an RFC 6266 `Content-Disposition` header and a `mime_type` sets
+      # `Content-Type`, replacing any configured header of the same name.
       #
       # The body is buffered in memory before the PUT because SigV4 signs a
       # hash of the payload.
       def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
-        headers = Hash(String, String).new
+        headers = @upload_options.dup
+        headers["x-amz-acl"] = "public-read" if public?
         if filename = metadata["filename"]?
-          headers["Content-Disposition"] = ContentDisposition.inline(filename.to_s)
+          set_header(headers, "Content-Disposition", ContentDisposition.inline(filename.to_s))
         end
         if mime_type = metadata["mime_type"]?
-          headers["Content-Type"] = mime_type.to_s
+          set_header(headers, "Content-Type", mime_type.to_s)
         end
-        headers["x-amz-acl"] = "public-read" if public?
-        headers.merge!(@upload_options)
 
         body = IO::Memory.new
         IO.copy(io, body)
@@ -116,6 +115,13 @@ class Gemma
       # Returns object key with potential prefix.
       def object_key(id : String) : String
         @prefix ? [@prefix, id].join("/") : id
+      end
+
+      # Sets *header_name*, dropping any configured header that differs only
+      # in case, so the request never carries two values.
+      private def set_header(headers : Hash(String, String), header_name : String, value : String) : Nil
+        headers.reject! { |existing_name, _| existing_name.compare(header_name, case_insensitive: true) == 0 }
+        headers[header_name] = value
       end
 
       private def url_expiry(requested_expiry) : Time::Span

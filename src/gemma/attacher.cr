@@ -69,12 +69,20 @@ class Gemma
       #
       #     # sets an existing cached file from Hash data
       #     attacher.attach_cached({ "id" => "...", "storage" => "cache", "metadata" => {} })
-      def attach_cached(value : IO | UploadedFile?, **options)
+      def attach_cached(value : IO?, **options)
         attach(value, **options.merge(storage: cache_key, action: :cache))
       end
 
+      # An `UploadedFile` can be deserialized from client JSON, so it goes
+      # through the same checks as a reference: it must be a file the cache
+      # holds, and its metadata is read again from the stored bytes.
+      def attach_cached(value : UploadedFile, **options)
+        reference = CachedFileReference.new(value.id, value.storage_key, CachedFileReference::ClientMetadata.new(value.original_filename))
+        change(cached(reference))
+      end
+
       def attach_cached(value : String | Hash(String, String | UploadedFile::MetadataType), **options)
-        change(cached(value, **options))
+        change(cached(CachedFileReference.parse(value.is_a?(String) ? value : value.to_json)))
       end
 
       # Uploads given IO object and changes the uploaded file.
@@ -313,9 +321,7 @@ class Gemma
       # and the file must exist in the cache. Size and MIME type are read
       # from the stored bytes; only the original filename comes from the
       # client. Raises `Gemma::NotCached` or `Gemma::InvalidLocation`.
-      private def cached(value : String | Hash(String, String | UploadedFile::MetadataType), **options) : UploadedFile
-        reference = CachedFileReference.parse(value.is_a?(String) ? value : value.to_json)
-
+      private def cached(reference : CachedFileReference) : UploadedFile
         # Files outside the cache would let one user claim another user's
         # stored attachment.
         unless reference.storage_key == cache_key

@@ -172,6 +172,15 @@ describe Gemma::Storage::FileSystem do
       end
     end
 
+    it "percent-encodes each segment, so a browser cannot turn %2e%2e into .." do
+      with_root do |root|
+        storage = file_system_storage(root, prefix: "cache")
+
+        storage.url("%2e%2e/store/victim.jpg").should eq("/cache/%252e%252e/store/victim.jpg")
+        storage.url("a b.jpg").should eq("/cache/a%20b.jpg")
+      end
+    end
+
     it "accepts a host with a prefix" do
       with_root do |root|
         storage = file_system_storage(root, prefix: "prefix")
@@ -186,6 +195,35 @@ describe Gemma::Storage::FileSystem do
     it "returns the path to the file" do
       with_root do |root|
         file_system_storage(root).path("foo/bar/baz").should eq("#{root}/foo/bar/baz")
+      end
+    end
+
+    it "refuses an id that reaches outside through a symlinked directory" do
+      with_root do |root|
+        outside = temporary_root
+        Dir.mkdir_p(outside)
+        File.write(File.join(outside, "secret.txt"), "secret")
+        begin
+          storage = file_system_storage(root, prefix: "cache")
+          File.symlink(outside, File.join(storage.expanded_directory, "link"))
+
+          expect_raises(Gemma::InvalidLocation) { storage.open("link/secret.txt") }
+          expect_raises(Gemma::InvalidLocation) { storage.upload(fakeio("pwn"), "link/planted.txt") }
+          expect_raises(Gemma::InvalidLocation) { storage.delete("link/secret.txt") }
+          File.exists?(File.join(outside, "planted.txt")).should be_false
+          File.exists?(File.join(outside, "secret.txt")).should be_true
+        ensure
+          FileUtils.rm_rf(outside)
+        end
+      end
+    end
+
+    it "refuses a symlinked file that points outside" do
+      with_root do |root|
+        storage = file_system_storage(root)
+        File.symlink("/etc/hosts", File.join(storage.expanded_directory, "hosts"))
+
+        expect_raises(Gemma::InvalidLocation) { storage.open("hosts") }
       end
     end
 

@@ -1,11 +1,18 @@
+require "uri"
 require "./base"
 
 class Gemma
   module Storage
     # Stores files under a directory on the local filesystem. Every id is
     # resolved inside that directory: an id that would land outside it
-    # (`../`, an absolute path, a NUL byte) raises `Gemma::InvalidLocation`
+    # (`../`, an absolute path, a NUL byte, or a symlink inside the
+    # directory that points elsewhere) raises `Gemma::InvalidLocation`
     # before anything is read or written.
+    #
+    # The check runs before each operation, so a symlink created between
+    # the check and the operation by someone with write access to the
+    # directory is not caught; keep the storage directory writable only by
+    # the app.
     class FileSystem < Storage::Base
       getter directory : String
       getter prefix : String?
@@ -60,7 +67,8 @@ class Gemma
 
       # Returns the absolute path of the file at *id*, which is always inside
       # `#expanded_directory`. Raises `Gemma::InvalidLocation` for an id that
-      # would resolve anywhere else.
+      # would resolve anywhere else, by its text (`../`) or through a
+      # symlink.
       def path(id : String) : String
         root = Path[expanded_directory]
         if id.empty? || id.includes?('\0') || Path[id].absolute?
@@ -72,6 +80,7 @@ class Gemma
           raise InvalidLocation.new("location #{id.inspect} resolves outside the storage directory")
         end
 
+        ensure_real_path_inside(resolved, root, id)
         resolved.to_s
       end
 
@@ -79,11 +88,16 @@ class Gemma
       # at the prefix (so *directory* can be the app's `public` folder);
       # without one it is the absolute filesystem path. *host* is put in
       # front of the path when given.
+      #
+      # Each path segment is percent-encoded, so an id segment such as
+      # `%2e%2e` stays a literal name in the URL instead of turning into `..`
+      # when a browser decodes it.
       def url(id : String, host : String? = nil, **options) : String
-        file_path = path(id)
+        file_path = Path[path(id)]
         subdirectory = relative_prefix
-        url_path = subdirectory ? (Path["/"] / subdirectory / Path[file_path].relative_to(expanded_directory)).to_s : file_path
-        host ? host + url_path : url_path
+        url_path = subdirectory ? Path["/"] / subdirectory / file_path.relative_to(expanded_directory) : file_path
+        encoded_path = url_path.parts.map_with_index { |part, index| index == 0 && part == "/" ? "" : URI.encode_path_segment(part) }.join('/')
+        host ? host + encoded_path : encoded_path
       end
 
       # Deletes the file, and by default the directories it leaves empty.
@@ -91,6 +105,24 @@ class Gemma
         file_path = path(id)
         File.delete?(file_path)
         clean_empty_directories(file_path) if clean?
+      end
+
+      # Resolves symlinks along *resolved* (as far as it exists) and raises
+      # `Gemma::InvalidLocation` unless the real path is inside the real
+      # storage directory.
+      private def ensure_real_path_inside(resolved : Path, root : Path, id : String) : Nil
+        real_root = Path[File.realpath(root)]
+        existing = resolved
+        until File.exists?(existing) || File.symlink?(existing)
+          existing = existing.parent
+        end
+
+        real_existing = Path[File.realpath(existing)]
+        unless real_existing == real_root || real_existing.parents.includes?(real_root)
+          raise InvalidLocation.new("location #{id.inspect} leads outside the storage directory through a symlink")
+        end
+      rescue error : File::Error
+        raise InvalidLocation.new("location #{id.inspect} could not be resolved", cause: error)
       end
 
       # Removes empty directories from *file_path*'s parent upward, stopping

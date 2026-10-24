@@ -79,6 +79,22 @@ describe Gemma::Storage::S3 do
     end
   end
 
+  it "sends the detected Content-Type even when the configuration names one" do
+    client = Gemma::Storage::S3::Client.new("us-east-2", "test_key", "test_secret")
+    storage = Gemma::Storage::S3.new(bucket: "test", client: client, upload_options: {"content-type" => "application/octet-stream"})
+    sent_request = nil
+    WebMock.stub(:put, "#{S3_SPEC_HOST}/a.jpg").to_return do |request|
+      sent_request = request
+      HTTP::Client::Response.new(200)
+    end
+
+    storage.upload(FakeIO.new("x"), "a.jpg", s3_metadata)
+
+    request = sent_request
+    raise "the PUT never reached the stub" unless request
+    request.headers.get("Content-Type").should eq(["image/jpeg"])
+  end
+
   describe "#exists?" do
     it "is true when HEAD succeeds" do
       WebMock.stub(:head, "#{S3_SPEC_HOST}/a/a/a.jpg").to_return(status: 200, headers: {"Content-Type" => "binary/octet-stream"})
