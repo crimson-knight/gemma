@@ -49,7 +49,7 @@ class Gemma
       end
 
       # Streams *io* into the file at *id*, creating directories as needed.
-      def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
+      def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
         File.write(path!(id), io, perm: permissions)
       end
 

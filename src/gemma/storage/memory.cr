@@ -16,7 +16,7 @@ class Gemma
         @mutex.synchronize { @store.dup }
       end
 
-      def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
+      def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
         content = io.getb_to_end
         @mutex.synchronize { @store[id] = content }
       end

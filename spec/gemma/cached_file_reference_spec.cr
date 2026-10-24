@@ -56,7 +56,7 @@ describe "Gemma::Attacher#attach_cached with a cached file reference" do
     cached = Gemma.upload(fakeio("cached bytes"), "cache")
     attacher = Gemma::Attacher.new
 
-    reference = {"id" => cached.id, "storage_key" => "cache"} of String => String | Gemma::UploadedFile::MetadataType
+    reference = {"id" => cached.id, "storage_key" => "cache"}
     attacher.attach_cached(reference)
 
     attacher.file.try(&.id).should eq(cached.id)
@@ -104,11 +104,11 @@ describe "Gemma#upload" do
   before_each { reset_storages }
 
   it "generates a 32-character hex location from a secure source" do
-    uploader.upload(fakeio).id.should match(/\A[0-9a-f]{32}\z/)
+    uploader.upload(fakeio("\u0000")).id.should match(/\A[0-9a-f]{32}\z/)
   end
 
-  it "keeps the extension of the client's filename" do
-    uploader.upload(fakeio(filename: "photo.JPG")).id.should match(/\A[0-9a-f]{32}\.JPG\z/)
+  it "keeps the client's extension, lowercased, when it fits the detected type" do
+    uploader.upload(image("320x180.jpg"), filename: "photo.JPG").id.should match(/\A[0-9a-f]{32}\.jpg\z/)
   end
 
   it "streams an UploadedFile from another storage" do

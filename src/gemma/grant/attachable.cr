@@ -34,7 +34,7 @@ class Gemma
           @{{ name.id }}_changed = true
         end
 
-        def {{ name.id }}=(value : String | Hash(String, String | Gemma::UploadedFile::MetadataType))
+        def {{ name.id }}=(value : String | Hash(String, String))
           {{ attacher_name }}.attach_cached(value)
           @{{ name.id }}_changed = true
         end
@@ -111,7 +111,7 @@ class Gemma
           @{{ name.id }}_changed = true
         end
 
-        def {{ name.id }}=(values : Array(String | Hash(String, String | Gemma::UploadedFile::MetadataType)))
+        def {{ name.id }}=(values : Array(String | Hash(String, String)))
           {{ attachers_name }}.clear
           values.each do |value|
             attacher = {{ uploader }}::Attacher.new

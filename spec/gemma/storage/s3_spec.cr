@@ -12,12 +12,8 @@ private def s3_storage(prefix : String? = nil) : Gemma::Storage::S3
   )
 end
 
-private def s3_metadata : Gemma::UploadedFile::MetadataType
-  Gemma::UploadedFile::MetadataType{
-    "filename"  => "résumé photo.jpg",
-    "mime_type" => "image/jpeg",
-    "size"      => "50",
-  }
+private def s3_metadata : Gemma::Metadata
+  Gemma::Metadata.new(filename: "résumé photo.jpg", mime_type: "image/jpeg", size: 50_i64)
 end
 
 describe Gemma::Storage::S3 do

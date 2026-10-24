@@ -55,14 +55,14 @@ class Gemma
       #
       # The body is buffered in memory before the PUT because SigV4 signs a
       # hash of the payload.
-      def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
+      def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
         headers = @upload_options.dup
         headers["x-amz-acl"] = "public-read" if public?
-        if filename = metadata["filename"]?
-          set_header(headers, "Content-Disposition", ContentDisposition.inline(filename.to_s))
+        if filename = metadata.filename
+          set_header(headers, "Content-Disposition", ContentDisposition.inline(filename))
         end
-        if mime_type = metadata["mime_type"]?
-          set_header(headers, "Content-Type", mime_type.to_s)
+        if mime_type = metadata.mime_type
+          set_header(headers, "Content-Type", mime_type)
         end
 
         body = IO::Memory.new

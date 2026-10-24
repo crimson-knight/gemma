@@ -19,10 +19,6 @@ development_dependencies:
     github: crystal-ameba/ameba
     # Crystal 1.21 compatibility (Ameba 1.7.0-dev); the same commit Grant uses.
     commit: cdd58b34b0d8a9c785d67183a7a8f07541549e55
-  fastimage:
-    github: jetrockets/fastimage.cr
-    # v1.2.1. Removed once the in-repo dimensions reader lands.
-    commit: d12081fb7bb468725f6191159e018093dfccfea4
   webmock:
     github: manastech/webmock.cr
     # v0.14.0

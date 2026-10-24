@@ -1,26 +1,27 @@
 class Gemma
   module Plugins
     module Column
+      # Turns an attacher's file into column data and back. Subclass it and
+      # pass it as `column_serializer:` to store another format.
       abstract class BaseSerializer
-        # Since we cannot make class level method abstract we raise NotImplementedError
+        # Crystal has no abstract class methods, so the base raises.
         # https://github.com/crystal-lang/crystal/issues/5956
-        #
-        def self.dump(data)
+        def self.dump(file : UploadedFile?) : String?
           raise NotImplementedError.new("Implement method .dump")
         end
 
-        def self.load(data)
+        def self.load(data : String) : UploadedFile
           raise NotImplementedError.new("Implement method .load")
         end
       end
 
       class JsonSerializer < BaseSerializer
-        def self.dump(data)
-          data.try &.to_json
+        def self.dump(file : UploadedFile?) : String?
+          file.try &.to_json
         end
 
-        def self.load(data)
-          Hash(String, String | UploadedFile::MetadataType).from_json(data)
+        def self.load(data : String) : UploadedFile
+          UploadedFile.from_json(data)
         end
       end
 
@@ -29,11 +30,12 @@ class Gemma
       }
 
       module AttacherClassMethods
-        # Initializes the attacher from a data hash/string expected to come
-        # from a database record column.
+        # Initializes the attacher from data stored in a database column.
         #
-        #     Attacher.from_column('{"id":"...","storage":"...","metadata":{...}}')
-        def from_column(data, **options) : Attacher?
+        # ```
+        # Attacher.from_column(%({"id":"...","storage_key":"store","metadata":{}}))
+        # ```
+        def from_column(data : String?, **options) : Attacher
           attacher = new(**options)
           attacher.load_column(data)
           attacher
@@ -41,7 +43,7 @@ class Gemma
       end
 
       module AttacherMethods
-        # Column serializer object.
+        # Column serializer class.
         getter column_serializer : Gemma::Plugins::Column::BaseSerializer.class
 
         # Allows overriding the default column serializer.
@@ -49,24 +51,22 @@ class Gemma
           super(**options)
         end
 
-        # Loads attachment from column data.
-        #
-        #     attacher.file #=> nil
-        #     attacher.load_column('{"id":"...","storage":"...","metadata":{...}}')
-        #     attacher.file #=> #<Gemma::UploadedFile>
+        # Loads the attachment from column data (trusted: it is what Gemma
+        # wrote).
         def load_column(data : String) : UploadedFile
-          load_data(column_serializer.load(data))
+          file = column_serializer.load(data)
+          load_data(file)
+          file
         end
 
         def load_column(data : Nil) : Nil
-          load_data(data)
+          load_data(nil)
         end
 
-        # Returns attacher data as a serialized string (JSON by default).
-        #
-        #     attacher.column_data #=> '{"id":"...","storage":"...","metadata":{...}}'
+        # Returns the attached file serialized for the column (JSON by
+        # default), or nil when nothing is attached.
         def column_data : String?
-          column_serializer.dump(data)
+          column_serializer.dump(file)
         end
       end
     end

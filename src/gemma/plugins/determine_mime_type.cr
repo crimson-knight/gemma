@@ -2,78 +2,108 @@ require "mime"
 
 class Gemma
   module Plugins
+    # Chooses how an uploader detects MIME types. Without this plugin Gemma
+    # uses its built-in magic-byte sniffer (`Tools::MagicBytes`).
+    #
+    # - `Tools::MagicBytes`: the built-in sniffer.
+    # - `Tools::File`: the `file(1)` command, fed the upload's first bytes.
+    #   Opt-in; it needs `file` installed.
+    # - `Tools::Mime`: the client filename's extension.
+    # - `Tools::ContentType`: the client's declared `Content-Type`.
+    #
+    # `Mime` and `ContentType` are the client's claims, so they are used only
+    # when the sniffer cannot identify the bytes, and never for a type a
+    # browser runs (HTML, XHTML, XML, SVG, JavaScript): such a claim gives
+    # `application/octet-stream`.
+    #
+    # ```
+    # class DocumentUploader < Gemma
+    #   load_plugin(Gemma::Plugins::DetermineMimeType,
+    #     analyzer: Gemma::Plugins::DetermineMimeType::Tools::File)
+    #
+    #   finalize_plugins!
+    # end
+    # ```
     module DetermineMimeType
       DEFAULT_OPTIONS = {
-        analyzer: :file,
+        analyzer: Gemma::Plugins::DetermineMimeType::Tools::MagicBytes,
       }
 
+      # MIME types a browser renders as active content.
+      ACTIVE_CONTENT_TYPES = {"text/html", "application/xhtml+xml", "text/xml", "application/xml", "image/svg+xml", "text/javascript", "application/javascript", "application/ecmascript"}
+
+      enum Tools
+        MagicBytes
+        File
+        Mime
+        ContentType
+      end
+
       module ClassMethods
-        # Determines the MIME type of the IO object by calling the specified
-        # analyzer.
-        def determine_mime_type(io)
-          config = plugin_settings.determine_mime_type
-          analyzer = mime_type_analyzer(config[:analyzer])
-
-          mime_type = analyzer.call(io)
-          io.rewind
-
-          mime_type
+        # Detects the MIME type of *io* with the configured analyzer. Reads
+        # the first `SNIFF_BYTES` of *io* and does not rewind it.
+        def determine_mime_type(io : IO) : String?
+          metadata = Metadata.new(filename: Gemma.client_filename(io))
+          if declared = Gemma.declared_content_type(io)
+            metadata.extra["declared_content_type"] = declared
+          end
+          prefix = Gemma.read_prefix(io, Gemma::SNIFF_BYTES)
+          mime_type_analyzer.call(prefix, metadata)
         end
 
-        # Returns a hash of built-in MIME type analyzers, where keys are
-        # analyzer names and values are `#call`-able objects which accepts the
-        # IO object.
-        def mime_type_analyzers
-          MimeTypeAnalyzer::Tools
-        end
-
-        # Returns callable mime type analyzer object.
-        def mime_type_analyzer(name : Tools)
-          MimeTypeAnalyzer.new(name)
+        # Returns the analyzer configured for this uploader.
+        def mime_type_analyzer : MimeTypeAnalyzer
+          MimeTypeAnalyzer.new(plugin_settings.determine_mime_type[:analyzer])
         end
       end
 
       module InstanceMethods
-        # Calls the configured MIME type analyzer.
-        private def extract_mime_type(io)
-          self.class.determine_mime_type(io)
+        def detect_mime_type(prefix : Bytes, metadata : Metadata) : String?
+          self.class.mime_type_analyzer.call(prefix, metadata)
         end
-      end
-
-      enum Tools
-        File
-        Mime
-        ContentType
       end
 
       class MimeTypeAnalyzer
         def initialize(@tool : Tools)
         end
 
-        def call(io, **options)
-          mime_type = case @tool
-                      when Tools::File
-                        extract_with_file(io, options)
-                      when Tools::Mime
-                        extract_with_mime(io, options)
-                      when Tools::ContentType
-                        extract_with_content_type(io, options)
-                      end
-
-          io.rewind
-
-          mime_type
+        # Returns the MIME type of the upload whose first bytes are *prefix*.
+        def call(prefix : Bytes, metadata : Metadata) : String?
+          case @tool
+          when Tools::File
+            extract_with_file(prefix)
+          when Tools::Mime
+            client_claim(prefix, metadata.filename.try { |name| MIME.from_filename?(name) })
+          when Tools::ContentType
+            client_claim(prefix, metadata.extra["declared_content_type"]?)
+          else
+            Analyzers::MagicBytes.mime_type(prefix)
+          end
         end
 
-        private def extract_with_file(io : IO, options)
-          # The file command answers "application/x-empty" for an empty file.
-          return if io.responds_to?(:size) && io.size.zero?
+        # The sniffed type when the bytes are recognized; otherwise the
+        # client's claim, unless it names active content.
+        private def client_claim(prefix : Bytes, claim : String?) : String?
+          if sniffed = Analyzers::MagicBytes.mime_type(prefix)
+            return sniffed
+          end
+          return unless claim
+
+          media_type = Gemma.media_type(claim)
+          return unless media_type
+
+          ACTIVE_CONTENT_TYPES.includes?(media_type) ? "application/octet-stream" : media_type
+        end
+
+        private def extract_with_file(prefix : Bytes) : String?
+          # file(1) answers "application/x-empty" for no bytes.
+          return if prefix.empty?
 
           stdout = IO::Memory.new
           stderr = IO::Memory.new
           status = begin
-            Process.run("file", args: ["--mime-type", "--brief", "-"], output: stdout, error: stderr, input: io)
-          rescue error : File::NotFoundError
+            Process.run("file", args: ["--mime-type", "--brief", "-"], output: stdout, error: stderr, input: IO::Memory.new(prefix, writable: false))
+          rescue error : ::File::NotFoundError
             raise AnalyzerMissing.new("the file command-line tool is not installed", cause: error)
           end
 
@@ -81,32 +111,7 @@ class Gemma
             raise AnalyzerFailed.new("file command failed: #{stderr}")
           end
 
-          io.rewind
-          stdout.to_s.strip
-        end
-
-        private def extract_with_mime(io, options)
-          if filename = extract_filename(io)
-            MIME.from_filename?(filename)
-          end
-        end
-
-        def extract_with_content_type(io, options)
-          return unless io.responds_to?(:content_type)
-
-          if declared_content_type = io.content_type
-            declared_content_type.split(";").first
-          end
-        end
-
-        def extract_filename(io)
-          if io.responds_to?(:original_filename)
-            io.original_filename
-          elsif io.responds_to?(:path)
-            if file_path = io.path
-              File.basename(file_path.to_s)
-            end
-          end
+          stdout.to_s.strip.presence
         end
       end
     end

@@ -12,18 +12,6 @@ private module FooPlugin
       "plugin_foo"
     end
   end
-
-  module FileClassMethods
-    def foo
-      "plugin_foo"
-    end
-  end
-
-  module FileMethods
-    def foo
-      "plugin_foo"
-    end
-  end
 end
 
 private class NonPluginUploader < Gemma
@@ -66,16 +54,6 @@ describe "Gemma.load_plugin" do
 
     it "responds to #foo with the plugin's value" do
       PluginUploader.new("store").foo.should eq("plugin_foo")
-    end
-  end
-
-  describe "the plugin uploader's UploadedFile" do
-    it "responds to .foo with the plugin's value" do
-      PluginUploader::UploadedFile.foo.should eq("plugin_foo")
-    end
-
-    it "does not add .foo to Gemma::UploadedFile" do
-      Gemma::UploadedFile.responds_to?(:foo).should be_false
     end
   end
 end

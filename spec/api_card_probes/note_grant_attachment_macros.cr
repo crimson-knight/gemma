@@ -3,8 +3,8 @@ require "../../src/gemma"
 require "grant"
 require "../../src/gemma/grant"
 
-alias GemmaAPICardAttachmentData = Hash(String, String | Gemma::UploadedFile::MetadataType)
-alias GemmaAPICardAttachmentList = Array(GemmaAPICardAttachmentData)
+alias GemmaAPICardAttachmentData = Gemma::UploadedFile
+alias GemmaAPICardAttachmentList = Array(Gemma::UploadedFile)
 
 class GemmaAPICardImage < Grant::Base
   table :api_card_probe_images

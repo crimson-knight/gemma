@@ -1,140 +1,109 @@
 require "json"
+require "./metadata"
 
 class Gemma
-  class UploadedFile
+  # A file Gemma stored: where it is (`id` on the storage named
+  # `storage_key`) and what Gemma knows about it (`metadata`). It is a
+  # plain value; opening it returns a new IO each time, which the caller
+  # closes (or use the block forms).
+  #
+  # Its JSON is the shape Gemma has always stored:
+  # `{"id": "...", "storage_key": "store", "metadata": {...}}`.
+  struct UploadedFile
     include JSON::Serializable
 
-    alias MetadataType = Hash(String, String | Int16 | UInt16 | Int32 | UInt32 | Int64 | UInt64?)
+    getter id : String
+    getter storage_key : String
+    getter metadata : Metadata = Metadata.new
 
-    struct Mapper
-      include JSON::Serializable
-
-      getter id : String
-      getter storage_key : String
-      getter metadata : MetadataType
-
-      def initialize(@id, @storage_key, @metadata)
-      end
+    def initialize(@id : String, @storage_key : String, @metadata : Metadata = Metadata.new)
     end
 
-    {% begin %}
-      {% for method in %w[id storage_key metadata to_json] %}
-        delegate {{ method.id }}, to: @mapper
-      {% end %}
-    {% end %}
-
-    @io : IO?
-    @mapper : Mapper
-
-    def self.from_json(json : String)
-      new(Mapper.from_json(json))
+    # Size in bytes, counted while the file was stored.
+    def size : Int64?
+      metadata.size
     end
 
-    def initialize(@mapper : Mapper)
+    # MIME type detected from the file's content.
+    def mime_type : String?
+      metadata.mime_type
     end
 
-    def initialize(id : String, storage_key : String, metadata : MetadataType = MetadataType.new)
-      @mapper = Mapper.new(id: id, storage_key: storage_key, metadata: metadata)
+    # :ditto:
+    def content_type : String?
+      mime_type
     end
 
-    delegate pos, to: io
-    delegate gets_to_end, to: io
+    # Image width in pixels, read from the file's header (with the
+    # `StoreDimensions` plugin).
+    def width : Int32?
+      metadata.width
+    end
 
-    def extension
+    # Image height in pixels, read from the file's header.
+    def height : Int32?
+      metadata.height
+    end
+
+    # `{width, height}` when both are known.
+    def dimensions : {Int32, Int32}?
+      metadata.dimensions
+    end
+
+    # The client's original filename, sanitized.
+    def original_filename : String?
+      metadata.filename
+    end
+
+    # The lowercase extension of the id, or else of the original filename.
+    def extension : String?
       result = File.extname(id)[1..-1]?
       if !result && (filename = original_filename)
         result = File.extname(filename)[1..-1]?
       end
-      result = result.downcase if result
-
-      result
+      result.try(&.downcase)
     end
 
-    def size
-      metadata["size"]?.try &.to_i
-    rescue ArgumentError
-      nil
+    # Opens the file on its storage. The caller closes the returned IO.
+    def open : IO
+      storage.open(id)
     end
 
-    def mime_type
-      metadata["mime_type"]?.try &.to_s
-    end
-
-    def content_type
-      mime_type
-    end
-
-    def original_filename
-      metadata["filename"]?.try &.to_s
-    end
-
-    # Shorthand for accessing metadata values.
-    def [](key)
-      metadata[key]?
-    end
-
-    # Calls `#open` on the storage to open the uploaded file for reading.
-    # Most storages will return a lazy IO object which dynamically
-    # retrieves file content from the storage as the object is being read.
-    #
-    # If a block is given, the opened IO object is yielded to the block,
-    # and at the end of the block it's automatically closed. In this case
-    # the return value of the method is the block return value.
-    #
-    # If no block is given, the opened IO object is returned.
+    # Opens the file, yields the IO, and closes it after the block.
     #
     # ```
-    # uploaded_file.open # => IO object returned by the storage
-    # uploaded_file.read # => "..."
-    # uploaded_file.close
-    #
-    # # or
-    #
-    # uploaded_file.open { |io| io.read } # the IO is automatically closed
+    # uploaded_file.open(&.gets_to_end) # => "..."
     # ```
-    #
-    def open(**options) : IO
-      @io.try(&.close)
-      opened_io = _open(**options)
-      @io = opened_io
-      opened_io
-    end
-
-    def open(**options, & : IO -> T) : T forall T
-      opened_io = open(**options)
-
+    def open(& : IO -> T) : T forall T
+      io = open
       begin
-        yield opened_io
+        yield io
       ensure
-        close
-        @io = nil
+        io.close
       end
     end
 
-    # Streams content into a newly created tempfile and returns it.
-    #
-    # ```
-    # uploaded_file.download
-    # # => #<File:/var/folders/.../20180302-33119-1h1vjbq.jpg>
-    # ```
-    #
-    def download(**options)
-      tempfile = File.tempfile("gemma", ".#{extension}")
-      stream(tempfile, **options)
-      tempfile.rewind
+    # Streams the file into a new tempfile and returns it rewound. The caller
+    # owns the tempfile and deletes it; if streaming fails, it is deleted
+    # here.
+    def download : File
+      suffix = extension.try { |found| ".#{found}" }
+      tempfile = File.tempfile("gemma", suffix)
+      begin
+        stream(tempfile)
+        tempfile.rewind
+      rescue error
+        tempfile.delete
+        tempfile.close
+        raise error
+      end
+      tempfile
     end
 
-    # Streams content into a newly created tempfile, yields it to the
-    # block, and at the end of the block automatically closes it.
-    # In this case the return value of the method is the block
-    # return value.
-    #
-    # ```
-    # uploaded_file.download { |tempfile| tempfile.gets_to_end } # tempfile is deleted
-    # ```
-    #
-    def download(**options, & : File -> T) : T forall T
-      tempfile = download(**options)
+    # Downloads the file to a tempfile, yields it, and closes and deletes it
+    # after the block.
+    def download(& : File -> T) : T forall T
+      tempfile = download
       begin
         yield tempfile
       ensure
@@ -143,93 +112,42 @@ class Gemma
       end
     end
 
-    # Streams uploaded file content into the specified destination. The
-    # destination object is given directly to `IO.copy`.
-    #
-    # If the uploaded file is already opened, it will be simply rewinded
-    # after streaming finishes. Otherwise the uploaded file is opened and
-    # then closed after streaming.
-    #
-    # ```
-    # uploaded_file.stream(IO::Memory.new)
-    # ```
-    def stream(destination : IO, **options)
-      if opened?
-        IO.copy(io, destination)
-        io.rewind
-      else
-        open(**options) { |io| IO.copy(io, destination) }
-      end
+    # Copies the file's content into *destination*.
+    def stream(destination : IO) : Nil
+      open { |io| IO.copy(io, destination) }
     end
 
-    # Part of complying to the IO interface. It delegates to the internally
-    # opened IO object.
-    def close
-      io.close if opened?
-    end
-
-    # Returns whether the file has already been opened.
-    def opened?
-      !!@io
-    end
-
-    # Calls `#url` on the storage, forwarding any given URL options.
+    # The storage's URL for the file; options go to the storage.
     def url(**options) : String
       storage.url(id, **options)
     end
 
-    # Calls `#exists?` on the storage, which checks whether the file exists
-    # on the storage.
-    def exists?
+    def exists? : Bool
       storage.exists?(id)
     end
 
-    # Uploads a new file to this file's location and returns it.
-    def replace(io, **options)
-      uploader.upload(io, **options, location: id)
+    # Uploads *io* to this file's location and returns the new file.
+    def replace(io : IO) : UploadedFile
+      uploader.upload(io, location: id)
     end
 
-    # Calls `#delete` on the storage, which deletes the file from the
-    # storage.
-    def delete
+    def delete : Nil
       storage.delete(id)
     end
 
-    # Returns an uploader object for the corresponding storage.
-    def uploader
+    # An uploader for this file's storage.
+    def uploader : Gemma
       Gemma.new(storage_key)
     end
 
-    # Returns the storage that this file was uploaded to.
     def storage : Gemma::Storage::Base
       Gemma.find_storage(storage_key)
     end
 
-    def io : IO
-      if opened_io = @io
-        return opened_io
-      end
-
-      opened_io = _open
-      @io = opened_io
-      opened_io
-    end
-
-    # Returns serializable hash representation of the uploaded file.
-    def data : Hash(String, String | MetadataType)
-      {"id" => id, "storage_key" => storage_key, "metadata" => metadata}
-    end
-
-    # Returns true if the other UploadedFile is uploaded to the same
-    # storage and it has the same #id.
-    def ==(other : UploadedFile)
-      self.class == other.class &&
-        id == other.id &&
-        storage_key == other.storage_key
-    end
-
-    private def _open(**options)
-      storage.open(id)
+    # Two uploaded files are equal when they name the same file: the same id
+    # on the same storage.
+    def ==(other : UploadedFile) : Bool
+      id == other.id && storage_key == other.storage_key
     end
   end
 end

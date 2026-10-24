@@ -248,14 +248,19 @@ end
 
 ## Plugins
 
-Gemma has a plugins interface similar to Shrine for Ruby. You can extend functionality of uploaders inherited from `Gemma` and also extend `UploadedFile` class.
+Gemma has a plugins interface similar to Shrine for Ruby. Plugins extend
+uploaders inherited from `Gemma`; file readers live on `Gemma::Metadata`
+(`size`, `mime_type`, `width`, `height`, `filename`, `extra`).
+
+Without any plugin, every upload records its size (counted while it
+streams) and its MIME type (from Gemma's built-in magic-byte sniffer, which
+needs no external command).
 
 ### Determine MIME Type
 
-The `DetermineMimeType` plugin is used to get mime type of uploaded file in several ways.
+The `DetermineMimeType` plugin chooses how the MIME type is detected.
 
 ```crystal
-
 require "gemma/plugins/determine_mime_type"
 
 class Uploader < Gemma
@@ -270,17 +275,21 @@ end
 
 **Analyzers**
 
-The following analyzers are accepted:
+| Name          | Description |
+| ------------- | ----------- |
+| `MagicBytes`  | (**Default**) Gemma's built-in sniffer: JPEG, PNG, GIF, WebP, BMP, TIFF, HEIC/HEIF, AVIF, SVG, PDF, MP3, M4A, WAV, FLAC, Ogg, MP4, QuickTime, WebM, ZIP and UTF-8 text. Anything else gives `nil`. |
+| `File`        | Runs the `file` command on the upload's first bytes. Opt-in; it needs `file` installed. |
+| `Mime`        | The client filename's extension, through `MIME.from_filename?`. |
+| `ContentType` | The client's declared `Content-Type`. |
 
-| Name          | Description                                                                                                                                                                                                         |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `File`        | (**Default**). Uses the file utility to determine the MIME type from file contents. It is installed by default on most operating systems.                                                                           |
-| `Mime`        | Uses the [MIME.from_filename](https://crystal-lang.org/api/0.31.1/MIME.html) method to determine the MIME type from file.                                                                                           |
-| `ContentType` | Retrieves the value of the `#content_type` attribute of the IO object. Note that this value normally comes from the "Content-Type" request header, so it's not guaranteed to hold the actual MIME type of the file. |
+`Mime` and `ContentType` are the client's claims, so Gemma uses them only for
+bytes the sniffer does not recognize, and answers `application/octet-stream`
+instead of a type a browser runs (HTML, XHTML, XML, SVG, JavaScript).
 
 ### Add Metadata
 
-The `AddMetadata` plugin provides a convenient method for extracting and adding custom metadata values.
+The `AddMetadata` plugin adds custom fields, computed from the upload's first
+bytes (`Gemma::SNIFF_BYTES`, 256 KiB), which each block reads as `io`.
 
 ```crystal
 require "base64"
@@ -297,15 +306,15 @@ class Uploader < Gemma
 end
 ```
 
-The above will add `"signature"` to the metadata hash.
+The above adds `"signature"` to the file's custom fields:
 
 ```crystal
-image.metadata["signature"]
+image.metadata.extra["signature"]
 ```
 
-**Multiple values**
-
-You can also extract multiple metadata values at once.
+A block can also return a `Hash(String, String)` to add several fields at
+once. Built-in fields (`size`, `mime_type`, `width`, `height`, `filename`)
+always come from the file and cannot be set this way.
 
 ```crystal
 class Uploader < Gemma
@@ -314,9 +323,9 @@ class Uploader < Gemma
   add_metadata :multiple_values, -> {
     text = io.gets_to_end
 
-    Gemma::UploadedFile::MetadataType{
+    {
       "custom_1" => text,
-      "custom_2" => text * 2
+      "custom_2" => text * 2,
     }
   }
 
@@ -324,41 +333,47 @@ class Uploader < Gemma
 end
 ```
 
-```crystal
-image.metadata["custom_1"]
-image.metadata["custom_2"]
-```
-
 ### Store Dimensions
 
-The `StoreDimensions` plugin extracts dimensions of uploaded images and stores them into the metadata. Additional dependency [https://github.com/jetrockets/fastimage.cr](https://github.com/jetrockets/fastimage.cr) needed for this plugin.
+The `StoreDimensions` plugin records the width and height of uploaded
+images. Files that are not images are stored without dimensions.
 
 ```crystal
-
-require "fastimage"
 require "gemma/plugins/store_dimensions"
 
 class Uploader < Gemma
-  load_plugin(Gemma::Plugins::StoreDimensions,
-    analyzer: Gemma::Plugins::StoreDimensions::Tools::FastImage)
+  load_plugin Gemma::Plugins::StoreDimensions
 
   finalize_plugins!
 end
 ```
 
 ```crystal
-image.metadata["width"]
-image.metadata["height"]
+image.width      # => 300 (Int32?)
+image.height     # => 300
+image.dimensions # => {300, 300}
 ```
 
 **Analyzers**
 
-The following analyzers are accepted:
+| Name       | Description |
+| ---------- | ----------- |
+| `Header`   | (**Default**) Gemma's header reader for PNG, GIF, JPEG (baseline and progressive), WebP and BMP. No external command. |
+| `Identify` | Runs ImageMagick's `identify` on the upload's first bytes. Opt-in; it needs ImageMagick installed. |
 
-| Name        | Description                                                                     |
-| ----------- | ------------------------------------------------------------------------------- |
-| `FastImage` | (**Default**) Uses the [FastImage](https://github.com/jetrockets/fastimage.cr). |
-| `Identify`  | A built-in solution that wrapps ImageMagick's `identify` command.               |
+### Upload size limit
+
+Override `max_size` in an uploader, or pass `max_size:` to `upload`. An
+upload that passes the limit raises `Gemma::FileTooLarge` while it streams,
+and nothing is left in storage.
+
+```crystal
+class AvatarUploader < Gemma
+  def max_size : Int64?
+    5_000_000_i64
+  end
+end
+```
 
 ## Feature Progress
 
