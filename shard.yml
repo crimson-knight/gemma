@@ -19,17 +19,16 @@ development_dependencies:
     commit: cdd58b34b0d8a9c785d67183a7a8f07541549e55
   fastimage:
     github: jetrockets/fastimage.cr
-    version: ~> 1.2.1
-  spectator:
-    gitlab: arctic-fox/spectator
-    version: ~> 0.11.6
+    # v1.2.1. Removed once the in-repo dimensions reader lands.
+    commit: d12081fb7bb468725f6191159e018093dfccfea4
   webmock:
     github: manastech/webmock.cr
-    version: 0.14.0
+    # v0.14.0
+    commit: 42b347cdd64e13193e46167a03593944ae2b3d20
   grant:
     github: crimson-knight/grant
     commit: da1e06161148f156dbce262a4a4efcb39cba5ba4
   sqlite3:
     github: crystal-lang/crystal-sqlite3
-    # Matches Grant's driver; 0.23.0 resolves against db 0.14.
-    version: "0.23.0"
+    # v0.23.0, which matches Grant's driver and resolves against db 0.14.
+    commit: 271a1314a6c64e6c3d98942a39bf1b3e8326b190

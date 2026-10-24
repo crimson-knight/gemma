@@ -2,8 +2,11 @@
 /lib/
 /bin/
 /.shards/
+/.minecart/
+/.crystal-cache/
+/spec/tmp/
 *.dwarf
 
-# Libraries don't need dependency lock
-# Dependencies will be locked in applications that use them
-/shard.lock
+# shard.lock is committed. Gemma has no runtime dependencies, so the lock
+# only pins the development shards; apps that require Gemma never read it.
+# CI installs with `--frozen` so every run uses the same verified sources.

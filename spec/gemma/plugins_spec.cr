@@ -1,6 +1,6 @@
 require "../spec_helper"
 
-module FooPlugin
+private module FooPlugin
   module ClassMethods
     def foo
       "plugin_foo"
@@ -26,7 +26,7 @@ module FooPlugin
   end
 end
 
-class NonPluginUploader < Gemma
+private class NonPluginUploader < Gemma
   module ClassMethods
     def foo
       "foo"
@@ -43,50 +43,39 @@ class NonPluginUploader < Gemma
   include InstanceMethods
 end
 
-class PluginUploader < NonPluginUploader
-  load_plugin ::FooPlugin
+private class PluginUploader < NonPluginUploader
+  load_plugin FooPlugin
   finalize_plugins!
 end
 
-Spectator.describe "Gemma.plugin" do
-  describe NonPluginUploader do
-    let(uploader_instance) { described_class.new("store") }
-
+describe "Gemma.load_plugin" do
+  describe "an uploader without the plugin" do
     it "responds to .foo with \"foo\"" do
-      expect(described_class).to respond_to("foo")
-      expect(described_class.foo).to eq("foo")
+      NonPluginUploader.foo.should eq("foo")
     end
 
     it "responds to #foo with \"foo\"" do
-      expect(uploader_instance).to respond_to("foo")
-      expect(uploader_instance.foo).to eq("foo")
+      NonPluginUploader.new("store").foo.should eq("foo")
     end
   end
 
-  describe PluginUploader do
-    let(uploader_instance) { described_class.new("store") }
-
-    it "responds to .foo with \"foo\"" do
-      expect(described_class).to respond_to("foo")
-      expect(described_class.foo).to eq("plugin_foo")
+  describe "an uploader with the plugin" do
+    it "responds to .foo with the plugin's value" do
+      PluginUploader.foo.should eq("plugin_foo")
     end
 
-    it "responds to #foo with \"foo\"" do
-      expect(uploader_instance).to respond_to("foo")
-      expect(uploader_instance.foo).to eq("plugin_foo")
+    it "responds to #foo with the plugin's value" do
+      PluginUploader.new("store").foo.should eq("plugin_foo")
     end
   end
 
-  describe PluginUploader::UploadedFile do
-    let(uploaded_file) { PluginUploader::UploadedFile }
-
-    it "responds to .foo with \"foo\"" do
-      expect(uploaded_file).to respond_to("foo")
-      expect(uploaded_file.foo).to eq("plugin_foo")
+  describe "the plugin uploader's UploadedFile" do
+    it "responds to .foo with the plugin's value" do
+      PluginUploader::UploadedFile.foo.should eq("plugin_foo")
     end
 
-    it "does not pollute superclass" do
-      expect(Gemma::UploadedFile).not_to respond_to("foo")
+    it "does not add .foo to Gemma::UploadedFile" do
+      Gemma::UploadedFile.responds_to?(:foo).should be_false
     end
   end
 end
