@@ -1,35 +1,141 @@
 module Gemma
   module Grant
-    # One `has_one_attached` attachment of one record, between saves.
-    #
-    # Assigning only caches the new file. `before_save` promotes it to the
-    # store and the column is written in the same statement; the replaced
-    # file and the cached copy are deleted once the save commits, and the
-    # promoted file is deleted if the save rolls back. Nothing is deleted
-    # before a commit.
-    class SingleAttachment
-      getter attacher : Gemma::Attacher
+    # What one save wrote for one attachment: the column value, the files it
+    # promoted and their cached copies. Kept until the transaction settles.
+    class SaveEntry(T)
+      getter written : T
+      getter column_before : T
+      getter list_of_promotions : Array({Gemma::Attacher, Gemma::UploadedFile, Gemma::UploadedFile})
+      property? undone = false
 
-      @persisted : Gemma::UploadedFile?
-      @cached : Gemma::UploadedFile?
-      @promoted : Gemma::UploadedFile?
+      def initialize(@written : T, @column_before : T, @list_of_promotions)
+      end
+
+      def promoted_files : Array(Gemma::UploadedFile)
+        list_of_promotions.map { |_attacher, _cached, promoted| promoted }
+      end
+
+      def cached_files : Array(Gemma::UploadedFile)
+        list_of_promotions.map { |_attacher, cached, _promoted| cached }
+      end
+    end
+
+    # The attachment state of one record between commits, shared by
+    # `has_one_attached` (`T` is `Gemma::UploadedFile?`) and
+    # `has_many_attached` (`T` is `Array(Gemma::UploadedFile)`).
+    #
+    # Assigning only caches. Each save promotes the cached files it finds
+    # and records a `SaveEntry`; Gemma registers an undo for that entry with
+    # the transaction, so a rollback (of the whole transaction, or of only
+    # the savepoint that held the save) deletes exactly the files that save
+    # promoted. When the transaction commits, the files the last save
+    # replaced or removed, files earlier saves promoted and the last one
+    # replaced, and every cached copy are deleted. Nothing is deleted before
+    # a commit.
+    abstract class AttachmentState(T)
+      # The column value the committed row holds.
+      getter committed : T
+      @ledger = [] of SaveEntry(T)
       @changed = false
 
-      # *persisted* is the file the record's column holds.
-      def initialize(@attacher : Gemma::Attacher, @persisted : Gemma::UploadedFile?)
-        @attacher.load_data(@persisted)
+      def initialize(@committed : T)
+      end
+
+      # Whether there are assignments no save has written yet.
+      def changed? : Bool
+        @changed
+      end
+
+      # The column value Gemma expects the record to hold: what the last
+      # save wrote, or what the committed row holds. A different value was
+      # set on the column directly, bypassing the checks assignment makes.
+      def expected_column : T
+        if entry = @ledger.reverse.find { |candidate| !candidate.undone? }
+          entry.written
+        else
+          committed
+        end
+      end
+
+      abstract def current_value : T
+      abstract def cached_attachers : Array(Gemma::Attacher)
+
+      # Promotes every cached file and records the save. Returns the entry,
+      # whose undo the caller registers with the transaction.
+      def prepare_save(column_before : T) : SaveEntry(T)
+        promotions = cached_attachers.compact_map do |attacher|
+          cached = attacher.file
+          promoted = attacher.promote
+          {attacher, cached, promoted} if cached && promoted
+        end
+        entry = SaveEntry(T).new(current_value, column_before, promotions)
+        @ledger << entry
+        @changed = false
+        entry
+      end
+
+      # Undoes one save: deletes the files it promoted and points their
+      # attachers back at the cached copies, so a later save promotes them
+      # again. Returns the column value from before that save. Safe to call
+      # twice.
+      def undo(entry : SaveEntry(T)) : T
+        unless entry.undone?
+          entry.undone = true
+          entry.list_of_promotions.each do |attacher, cached, promoted|
+            promoted.delete
+            attacher.set(cached) if attacher.file == promoted
+          end
+          @changed = true unless entry.list_of_promotions.empty?
+        end
+        entry.column_before
+      end
+
+      # After the transaction commits a save: deletes what the final row no
+      # longer names, every file an earlier save promoted that the final
+      # one replaced, and the cached copies.
+      def commit_save : Nil
+        live = @ledger.reject(&.undone?)
+        @ledger.clear
+        return if live.empty?
+
+        final = live.last.written
+        kept = files_of(final)
+        doomed = files_of(committed) + live.flat_map(&.promoted_files)
+        doomed.uniq.each { |stored| stored.delete unless kept.includes?(stored) }
+        live.flat_map(&.cached_files).uniq!.each(&.delete)
+        @committed = final
+      end
+
+      # After the record's destroy commits: deletes every stored file the
+      # record held or any save in the transaction promoted, and the cached
+      # copies those saves made.
+      def commit_destroy : Nil
+        live = @ledger.reject(&.undone?)
+        @ledger.clear
+        stored = files_of(committed) + live.flat_map(&.promoted_files) + files_of(current_value).reject { |file| cached?(file) }
+        stored.uniq.each(&.delete)
+        live.flat_map(&.cached_files).uniq!.each(&.delete)
+      end
+
+      abstract def files_of(value : T) : Array(Gemma::UploadedFile)
+      abstract def cached?(file : Gemma::UploadedFile) : Bool
+    end
+
+    # One `has_one_attached` attachment of one record.
+    class SingleAttachment < AttachmentState(Gemma::UploadedFile?)
+      getter attacher : Gemma::Attacher
+
+      def initialize(@attacher : Gemma::Attacher, committed : Gemma::UploadedFile?)
+        super(committed)
+        @attacher.load_data(committed)
       end
 
       def file : Gemma::UploadedFile?
         attacher.file
       end
 
-      def changed? : Bool
-        @changed
-      end
-
-      # Caches an upload (an `IO`, or a multipart part such as
-      # `Amber::Router::File`) as the new file.
+      # Caches an upload: an `IO`, or a multipart part such as
+      # `Amber::Router::File`.
       def assign(io : IO) : Nil
         attacher.attach_cached(io)
         @changed = true
@@ -42,7 +148,7 @@ module Gemma
         @changed = true
       end
 
-      # Removes the attachment; the stored file is deleted at commit.
+      # Removes the attachment; the stored file is deleted after commit.
       def assign(value : Nil) : Nil
         attacher.attach(nil)
         @changed = true
@@ -53,65 +159,30 @@ module Gemma
         @changed = true
       end
 
-      # Promotes a newly cached file and returns what the column holds.
-      def prepare_save : Gemma::UploadedFile?
-        if @changed && attacher.cached? && @promoted.nil?
-          @cached = attacher.file
-          @promoted = attacher.promote
-        end
+      def current_value : Gemma::UploadedFile?
         attacher.file
       end
 
-      # After the save commits: deletes the replaced file and the cached copy.
-      def commit_save : Nil
-        return unless @changed
-
-        current = attacher.file
-        if (replaced = @persisted) && replaced != current
-          replaced.delete
-        end
-        @cached.try(&.delete)
-        @persisted = current
-        @cached = nil
-        @promoted = nil
-        @changed = false
+      def cached_attachers : Array(Gemma::Attacher)
+        attacher.cached? ? [attacher] : [] of Gemma::Attacher
       end
 
-      # After a failed save: deletes the promoted file and goes back to the
-      # cached one, so saving again promotes it again. Returns what the
-      # column held before the save.
-      def roll_back_save : Gemma::UploadedFile?
-        if promoted = @promoted
-          promoted.delete
-          attacher.set(@cached)
-          @promoted = nil
-          @cached = nil
-        end
-        @persisted
+      def files_of(value : Gemma::UploadedFile?) : Array(Gemma::UploadedFile)
+        value ? [value] : [] of Gemma::UploadedFile
       end
 
-      # After the record's destroy commits: deletes its stored file.
-      def commit_destroy : Nil
-        stored_files = [attacher.file, @persisted].compact.uniq!
-        stored_files.each { |stored| stored.delete unless attacher.cached?(stored) }
+      def cached?(file : Gemma::UploadedFile) : Bool
+        attacher.cached?(file)
       end
     end
 
-    # The `has_many_attached` list of one record, between saves, with the
-    # same deferred promotion and deletion as `SingleAttachment`.
-    class AttachmentList
+    # The `has_many_attached` list of one record.
+    class AttachmentList < AttachmentState(Array(Gemma::UploadedFile))
       getter list_of_attachers : Array(Gemma::Attacher)
 
-      @persisted : Array(Gemma::UploadedFile)
-      # Each promotion this save made: the attacher, its cached file and the
-      # stored copy.
-      @promotions = [] of {Gemma::Attacher, Gemma::UploadedFile, Gemma::UploadedFile}
-      @changed = false
-
-      # *persisted* is the list the record's column holds.
-      def initialize(@attacher_factory : -> Gemma::Attacher, persisted : Array(Gemma::UploadedFile)?)
-        @persisted = persisted || [] of Gemma::UploadedFile
-        @list_of_attachers = @persisted.map do |stored|
+      def initialize(@attacher_factory : Proc(Gemma::Attacher), committed : Array(Gemma::UploadedFile)?)
+        super(committed || [] of Gemma::UploadedFile)
+        @list_of_attachers = @committed.map do |stored|
           attacher = @attacher_factory.call
           attacher.load_data(stored)
           attacher
@@ -122,72 +193,57 @@ module Gemma
         list_of_attachers.compact_map(&.file)
       end
 
-      def changed? : Bool
-        @changed
-      end
-
-      # Replaces the whole list with new uploads or cached references.
+      # Replaces the whole list. Every value is cached first; if one fails,
+      # the list is unchanged and the files cached for it are deleted.
       def replace(values : Array) : Nil
-        list_of_attachers.clear
-        values.each { |value| add(value) }
+        replacements = [] of Gemma::Attacher
+        begin
+          values.each { |value| replacements << build(value) }
+        rescue error
+          replacements.each(&.file.try(&.delete))
+          raise error
+        end
+        @list_of_attachers = replacements
         @changed = true
       end
 
       def add(value) : Nil
-        attacher = @attacher_factory.call
-        attacher.attach_cached(value)
-        list_of_attachers << attacher
+        list_of_attachers << build(value)
         @changed = true
       end
 
-      # Removes *file* from the list; it is deleted at commit.
+      # Removes *file* from the list; it is deleted after commit.
       def remove(file : Gemma::UploadedFile) : Nil
         list_of_attachers.reject! { |attacher| attacher.file == file }
         @changed = true
       end
 
-      # Removes every file; they are deleted at commit.
+      # Removes every file; they are deleted after commit.
       def clear : Nil
         list_of_attachers.clear
         @changed = true
       end
 
-      def prepare_save : Array(Gemma::UploadedFile)
-        if @changed
-          list_of_attachers.each do |attacher|
-            next unless attacher.cached?
-
-            cached = attacher.file
-            promoted = attacher.promote
-            @promotions << {attacher, cached, promoted} if cached && promoted
-          end
-        end
+      def current_value : Array(Gemma::UploadedFile)
         files
       end
 
-      def commit_save : Nil
-        return unless @changed
-
-        current = files
-        @persisted.each { |stored| stored.delete unless current.includes?(stored) }
-        @promotions.each { |_attacher, cached, _promoted| cached.delete }
-        @persisted = current
-        @promotions.clear
-        @changed = false
+      def cached_attachers : Array(Gemma::Attacher)
+        list_of_attachers.select(&.cached?)
       end
 
-      def roll_back_save : Array(Gemma::UploadedFile)
-        @promotions.each do |attacher, cached, promoted|
-          promoted.delete
-          attacher.set(cached)
-        end
-        @promotions.clear
-        @persisted
+      def files_of(value : Array(Gemma::UploadedFile)) : Array(Gemma::UploadedFile)
+        value
       end
 
-      def commit_destroy : Nil
-        stored_files = list_of_attachers.compact_map { |attacher| attacher.file unless attacher.cached? }
-        (stored_files + @persisted).uniq.each(&.delete)
+      def cached?(file : Gemma::UploadedFile) : Bool
+        list_of_attachers.any? { |attacher| attacher.file == file && attacher.cached? }
+      end
+
+      private def build(value) : Gemma::Attacher
+        attacher = @attacher_factory.call
+        attacher.attach_cached(value)
+        attacher
       end
     end
   end

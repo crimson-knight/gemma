@@ -1,4 +1,5 @@
 require "json"
+require "yaml"
 require "./metadata"
 
 module Gemma
@@ -11,6 +12,7 @@ module Gemma
   # `{"id": "...", "storage_key": "store", "metadata": {...}}`.
   struct UploadedFile
     include JSON::Serializable
+    include YAML::Serializable
 
     getter id : String
     getter storage_key : String

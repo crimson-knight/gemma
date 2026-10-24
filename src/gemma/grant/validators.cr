@@ -32,6 +32,15 @@ module Gemma
         value
       end
 
+      # The patterns an `accept:`/`reject:` option names: one, or a list.
+      def self.patterns(pattern : String) : Array(String)
+        [pattern]
+      end
+
+      def self.patterns(list_of_patterns : Enumerable(String)) : Array(String)
+        list_of_patterns.to_a
+      end
+
       # Whether *mime_type* matches *pattern*: an exact type, or `type/*`.
       def self.type_matches?(mime_type : String, pattern : String) : Bool
         if pattern.ends_with?("/*")
@@ -75,7 +84,7 @@ module Gemma
           __rule({{ name }}, {{ message }} || "has an invalid content type", :invalid_type, {{ options.double_splat }}) do
             Gemma::Grant::AttachmentValidators.files(value).all? do |file|
               mime_type = file.mime_type
-              !mime_type.nil? && {{ accept }}.any? { |pattern| Gemma::Grant::AttachmentValidators.type_matches?(mime_type, pattern) }
+              !mime_type.nil? && Gemma::Grant::AttachmentValidators.patterns({{ accept }}).any? { |pattern| Gemma::Grant::AttachmentValidators.type_matches?(mime_type, pattern) }
             end
           end
         {% end %}
@@ -83,7 +92,7 @@ module Gemma
           __rule({{ name }}, {{ message }} || "has a forbidden content type", :forbidden_type, {{ options.double_splat }}) do
             Gemma::Grant::AttachmentValidators.files(value).all? do |file|
               mime_type = file.mime_type
-              !mime_type.nil? && {{ reject }}.none? { |pattern| Gemma::Grant::AttachmentValidators.type_matches?(mime_type, pattern) }
+              !mime_type.nil? && Gemma::Grant::AttachmentValidators.patterns({{ reject }}).none? { |pattern| Gemma::Grant::AttachmentValidators.type_matches?(mime_type, pattern) }
             end
           end
         {% end %}
@@ -125,29 +134,30 @@ module Gemma
         {% end %}
       end
 
+      # The 0.6 names, with their 0.6 argument shapes.
       @[Deprecated("Use validates_attachment_size_of.")]
-      macro validate_file_size_of(name, **options)
-        validates_attachment_size_of({{ name }}, {{ options.double_splat }})
+      macro validate_file_size_of(name, maximum = nil, minimum = nil, message = nil)
+        validates_attachment_size_of({{ name }}, maximum: {{ maximum }}, minimum: {{ minimum }}, message: {{ message }})
       end
 
       @[Deprecated("Use validates_attachment_type_of.")]
-      macro validate_content_type_of(name, **options)
-        validates_attachment_type_of({{ name }}, {{ options.double_splat }})
+      macro validate_content_type_of(name, accept = nil, reject = nil, message = nil)
+        validates_attachment_type_of({{ name }}, accept: {{ accept }}, reject: {{ reject }}, message: {{ message }})
       end
 
       @[Deprecated("Use validates_attachment_presence_of.")]
-      macro validate_presence_of(name, **options)
-        validates_attachment_presence_of({{ name }}, {{ options.double_splat }})
+      macro validate_presence_of(name, message = nil)
+        validates_attachment_presence_of({{ name }}, message: {{ message }})
       end
 
       @[Deprecated("Use validates_attachment_dimensions_of.")]
-      macro validate_dimensions_of(name, **options)
-        validates_attachment_dimensions_of({{ name }}, {{ options.double_splat }})
+      macro validate_dimensions_of(name, width = nil, height = nil, message = nil)
+        validates_attachment_dimensions_of({{ name }}, width: {{ width }}, height: {{ height }}, message: {{ message }})
       end
 
       @[Deprecated("Use validates_attachment_count_of.")]
-      macro validate_collection_size_of(name, **options)
-        validates_attachment_count_of({{ name }}, {{ options.double_splat }})
+      macro validate_collection_size_of(name, maximum = nil, minimum = nil, message = nil)
+        validates_attachment_count_of({{ name }}, maximum: {{ maximum }}, minimum: {{ minimum }}, message: {{ message }})
       end
     end
   end

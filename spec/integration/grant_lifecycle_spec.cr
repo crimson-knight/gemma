@@ -204,9 +204,12 @@ describe "Gemma::Grant attachment lifecycle on a real Grant model" do
     end
 
     it "fails a size rule when the size is unknown, as in a row without one" do
-      profile = IntegrationProfile.new
-      profile.avatar_data = Gemma::UploadedFile.new("old.png", "store")
+      IntegrationProfile.adapter.open do |database|
+        database.exec %(INSERT INTO integration_profiles (id, avatar_data) VALUES (77, '{"id":"old.png","storage_key":"store","metadata":{"filename":"old.png"}}'))
+      end
+      profile = IntegrationProfile.find!(77)
 
+      profile.avatar.try(&.size).should be_nil
       profile.valid?.should be_false
       profile.errors.map(&.to_s).should eq(["Avatar is too large (maximum is 3 bytes)"])
     end
@@ -218,6 +221,125 @@ describe "Gemma::Grant attachment lifecycle on a real Grant model" do
       listing.valid?.should be_false
       listing.errors.map(&.to_s).should eq(["Documents has too many files (maximum is 3)"])
     end
+  end
+
+  describe "several saves in one transaction" do
+    it "promotes each save's file and keeps only the last one at commit" do
+      listing = saved_listing
+      first_photo = listing.photo || fail("expected a photo")
+      second_photo = nil
+
+      IntegrationListing.transaction do
+        listing.photo = png_io
+        listing.save.should be_true
+        second_photo = listing.photo
+        listing.photo = png_io
+        listing.save.should be_true
+      end
+
+      final = IntegrationListing.find!(listing.id).photo || fail("expected a photo")
+      final.storage_key.should eq("store")
+      final.exists?.should be_true
+      first_photo.exists?.should be_false
+      second_photo.try(&.exists?).should be_false
+      memory_storage("cache").store.should be_empty
+    end
+
+    it "undoes only the save inside a rolled-back savepoint" do
+      listing = saved_listing
+      kept_photo = nil
+      discarded_photo = nil
+
+      IntegrationListing.transaction do
+        listing.photo = png_io
+        listing.save.should be_true
+        kept_photo = listing.photo
+
+        IntegrationListing.transaction(requires_new: true) do
+          listing.photo = png_io
+          listing.save.should be_true
+          discarded_photo = listing.photo
+          raise Grant::Transaction::Rollback.new
+        end
+      end
+
+      kept_photo.try(&.exists?).should be_true
+      discarded_photo.try(&.exists?).should be_false
+      IntegrationListing.find!(listing.id).photo.should eq(kept_photo)
+    end
+
+    it "keeps the committed file when it is removed without a later save" do
+      listing = saved_listing
+      saved_photo = nil
+
+      IntegrationListing.transaction do
+        listing.photo = png_io
+        listing.save.should be_true
+        saved_photo = listing.photo
+        listing.photo = nil
+        listing.clear_documents
+      end
+
+      saved_photo.try(&.exists?).should be_true
+      IntegrationListing.find!(listing.id).documents.size.should eq(2)
+      listing.photo_changed?.should be_true
+    end
+
+    it "deletes what an earlier save promoted when the record is destroyed in the same transaction" do
+      listing = saved_listing
+
+      IntegrationListing.transaction do
+        listing.photo = png_io
+        listing.save.should be_true
+        listing.destroy.should be_true
+      end
+
+      stored_ids.should be_empty
+      memory_storage("cache").store.should be_empty
+    end
+  end
+
+  describe "the column" do
+    it "refuses a value set directly, which would skip the reference checks" do
+      victim = saved_listing
+      victim_photo = victim.photo || fail("expected a photo")
+
+      rows_before = IntegrationListing.count
+      thief = IntegrationListing.new
+      thief.photo_data = Gemma::UploadedFile.new(victim_photo.id, "store", Gemma::Metadata.new(mime_type: "image/png"))
+
+      thief.save.should be_false
+      IntegrationListing.count.should eq(rows_before)
+    end
+
+    it "refuses a value set directly on a loaded record" do
+      listing = IntegrationListing.find!(saved_listing.id)
+      listing.photo_data = Gemma::UploadedFile.new("other.png", "store")
+
+      listing.save.should be_false
+    end
+
+    it "round-trips through the model's JSON and YAML" do
+      listing = IntegrationListing.find!(saved_listing.id)
+      photo = listing.photo || fail("expected a photo")
+
+      Gemma::UploadedFile.from_yaml(photo.to_yaml).metadata.should eq(photo.metadata)
+      IntegrationListing.from_yaml(listing.to_yaml).photo_data.try(&.metadata).should eq(photo.metadata)
+      IntegrationListing.from_json(listing.to_json).documents_data.try(&.size).should eq(2)
+    end
+  end
+
+  it "leaves the list unchanged when one replacement fails" do
+    listing = saved_listing
+    before = listing.documents
+
+    expect_raises(Gemma::InvalidLocation) do
+      listing.documents = [IO::Memory.new("new"), Gemma::CachedFileReference.new("../x", "cache")]
+    end
+
+    listing.documents.should eq(before)
+    listing.documents_changed?.should be_false
+    memory_storage("cache").store.should be_empty
   end
 
   describe "the 0.6 validator names" do
@@ -237,7 +359,8 @@ describe "Gemma::Grant attachment lifecycle on a real Grant model" do
           column id : Int64, primary: true
           has_one_attached :avatar
 
-          validate_file_size_of :avatar, maximum: 5
+          validate_file_size_of :avatar, 5
+          validate_content_type_of :avatar, "image/png"
         end
 
         LegacyValidatedUser.new.valid?
