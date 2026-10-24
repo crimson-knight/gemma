@@ -6,6 +6,10 @@
 # still reproduces. Once a change makes the assertion pass, the example fails
 # and asks for `it_reproduces_known_defect` to become a plain `it`.
 #
+# Only `should` failures count as the defect reproducing. Setup inside the
+# block must not use `should`: raise instead (`record.save || raise "..."`),
+# so a broken setup errors the example rather than passing as "pending".
+#
 # ```
 # it_reproduces_known_defect "keeps the caller's IO open", fixed_in: "PR 4" do
 #   io = tempfile("x")

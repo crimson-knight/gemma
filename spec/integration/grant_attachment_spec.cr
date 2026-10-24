@@ -63,11 +63,12 @@ describe "Gemma::Grant::Attachable on a real Grant model" do
       saved_file(user.avatar).storage_key.should eq("store")
     end
 
-    it "clears the changed flag after save" do
+    it "sets the column in memory and clears the changed flag after save" do
       user = IntegrationUser.new
       user.avatar = avatar_io
       user.save
 
+      user.avatar_data.try(&.["storage_key"]?).should eq("store")
       user.avatar_changed?.should be_false
     end
 
@@ -143,6 +144,15 @@ describe "Gemma::Grant::Attachable on a real Grant model" do
       post.save
 
       post.images.map(&.storage_key).should eq(["store", "store"])
+    end
+
+    it "sets the column in memory and clears the changed flag after save" do
+      post = IntegrationPost.new
+      post.images = [image_io(1), image_io(2)]
+      post.save
+
+      post.images_data.try(&.size).should eq(2)
+      post.images_changed?.should be_false
     end
 
     it "deletes every stored file when the record is destroyed" do

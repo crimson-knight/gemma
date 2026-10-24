@@ -8,7 +8,7 @@ describe "persist probe" do
   it_reproduces_known_defect "writes has_one_attached's column in the same save", fixed_in: "PR 7 (Grant layer)" do
     user = IntegrationUser.new
     user.avatar = IO::Memory.new("hello")
-    user.save.should be_true
+    user.save || raise "setup: save failed"
 
     reloaded = IntegrationUser.find!(user.id)
     reloaded.avatar_data.should_not be_nil
@@ -18,7 +18,7 @@ describe "persist probe" do
   it_reproduces_known_defect "writes has_many_attached's column in the same save", fixed_in: "PR 7 (Grant layer)" do
     post = IntegrationPost.new
     post.images = [IO::Memory.new("one"), IO::Memory.new("two")]
-    post.save.should be_true
+    post.save || raise "setup: save failed"
 
     IntegrationPost.find!(post.id).images.size.should eq(2)
   end
@@ -26,7 +26,7 @@ describe "persist probe" do
   it_reproduces_known_defect "deletes the cached copy once the file is promoted", fixed_in: "PR 7 (Grant layer)" do
     user = IntegrationUser.new
     user.avatar = IO::Memory.new("hello")
-    user.save
+    user.save || raise "setup: save failed"
 
     memory_storage("cache").store.size.should eq(0)
   end

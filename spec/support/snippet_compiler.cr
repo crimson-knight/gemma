@@ -8,6 +8,11 @@
 # `CRYSTAL_PATH` to `lib` plus the stdlib. The compiler is `crystal-alpha`
 # unless the `CRYSTAL` environment variable names another binary.
 module SnippetCompiler
+  # Raised by `run` when the program does not build, so an infrastructure
+  # failure errors the example instead of reading as the behavior under test.
+  class BuildFailed < Exception
+  end
+
   REPOSITORY_ROOT   = File.expand_path("../..", __DIR__)
   SNIPPET_DIRECTORY = File.join(REPOSITORY_ROOT, "spec", "tmp")
   TIMED_OUT         = -1
@@ -43,16 +48,18 @@ module SnippetCompiler
   end
 
   # Builds *source*, then runs the program for at most *timeout*. The result
-  # carries the program's exit code (`TIMED_OUT` when it was killed) and its
-  # combined output, or the compiler's when the build failed.
+  # carries the program's exit code (`TIMED_OUT` when it was killed) and the
+  # compiler's output followed by the program's. Raises `BuildFailed` when
+  # the build fails or prints a warning.
   def self.run(source : String, timeout : Time::Span = 30.seconds) : Result
     with_snippet_file(source) do |path|
       binary_path = path.rchop(".cr")
       build = execute(compiler, ["build", "--no-color", path, "-o", binary_path])
-      next build unless build.exit_code == 0
+      raise BuildFailed.new("snippet build failed: #{build.summary}") unless build.succeeded?
 
       begin
-        execute(binary_path, [] of String, timeout)
+        program = execute(binary_path, [] of String, timeout)
+        Result.new(program.exit_code, build.output + program.output)
       ensure
         File.delete?(binary_path)
         File.delete?("#{binary_path}.dwarf")
@@ -82,6 +89,7 @@ module SnippetCompiler
       Result.new(status.exit_code, output.to_s)
     when timeout(timeout || 10.minutes)
       process.signal(Signal::KILL)
+      finished.receive # reap the killed process before reading its output
       Result.new(TIMED_OUT, output.to_s + "\n(killed after #{timeout})")
     end
   end
