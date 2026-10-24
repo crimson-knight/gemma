@@ -98,8 +98,15 @@ class Gemma
 
         # Extract dimensions from a given file
         def dimensions : Tuple(UInt16, UInt16)
-          dimensions = identify(["-format", "%[fx:w] %[fx:h]"]).split.map(&.to_u16)
-          {dimensions[0], dimensions[1]}
+          output = identify(["-format", "%[fx:w] %[fx:h]"])
+          width, height = output.split.map(&.to_u16?)
+          unless width && height
+            raise AnalyzerFailed.new("identify printed #{output.inspect}, not a width and a height")
+          end
+
+          {width, height}
+        rescue error : IndexError
+          raise AnalyzerFailed.new("identify printed no dimensions", cause: error)
         end
 
         # Execute an identify command

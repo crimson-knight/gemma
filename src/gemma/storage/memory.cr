@@ -21,8 +21,8 @@ class Gemma
       def open(id : String) : IO
         # StringIO.new(store.fetch(id))
         IO::Memory.new(store[id])
-      rescue KeyError
-        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage")
+      rescue error : KeyError
+        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage", cause: error)
       end
 
       def open(id : String, **options) : IO

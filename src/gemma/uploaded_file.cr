@@ -100,7 +100,7 @@ class Gemma
       opened_io
     end
 
-    def open(**options, &)
+    def open(**options, & : IO -> T) : T forall T
       opened_io = open(**options)
 
       begin
@@ -133,7 +133,7 @@ class Gemma
     # uploaded_file.download { |tempfile| tempfile.gets_to_end } # tempfile is deleted
     # ```
     #
-    def download(**options, &)
+    def download(**options, & : File -> T) : T forall T
       tempfile = download(**options)
       begin
         yield tempfile

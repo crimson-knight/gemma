@@ -26,7 +26,8 @@ describe "err probe" do
     root = temporary_root
     begin
       storage = Gemma::Storage::FileSystem.new(root)
-      expect_raises(Gemma::FileNotFound) { storage.open("missing") }
+      error = expect_raises(Gemma::FileNotFound) { storage.open("missing") }
+      error.cause.should be_a(File::NotFoundError)
     ensure
       FileUtils.rm_rf(root)
     end
@@ -34,9 +35,10 @@ describe "err probe" do
 
   it "raises Gemma::AnalyzerMissing when an analyzer's command is not installed" do
     without_executables do
-      expect_raises(Gemma::AnalyzerMissing) do
+      error = expect_raises(Gemma::AnalyzerMissing) do
         ErrProbeFileCommandUploader.determine_mime_type(fakeio("text"))
       end
+      error.cause.should be_a(File::NotFoundError)
     end
   end
 

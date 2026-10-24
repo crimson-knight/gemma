@@ -11,9 +11,10 @@ describe "finalize probe" do
     result = SnippetCompiler.run <<-'CRYSTAL'
       require "gemma"
 
+      STORE = Gemma::Storage::Memory.new
       Gemma.configure do |config|
         config.storages["cache"] = Gemma::Storage::Memory.new
-        config.storages["store"] = Gemma::Storage::Memory.new
+        config.storages["store"] = STORE
       end
 
       def abandon_cached_attachers(count : Int32) : Nil
@@ -25,7 +26,7 @@ describe "finalize probe" do
 
       abandon_cached_attachers(20)
       5.times { GC.collect }
-      stored_count = Gemma.settings.storages["store"].as(Gemma::Storage::Memory).store.size
+      stored_count = STORE.store.size
       puts "store objects after GC: #{stored_count}"
       exit(stored_count == 0 ? 0 : 1)
       CRYSTAL
