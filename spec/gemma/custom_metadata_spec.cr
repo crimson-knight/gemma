@@ -14,6 +14,21 @@ class UploaderWithCustomMetadata < Gemma::Uploader
   end
 end
 
+class UploaderMeasuringAspect < Gemma::Uploader
+  include Gemma::Plugins::StoreDimensions
+
+  def custom_metadata(io : IO, metadata : Gemma::Metadata) : Hash(String, String)
+    fields = {} of String => String
+    if dimensions = metadata.dimensions
+      width, height = dimensions
+      fields["aspect"] = (width / height).to_s
+    end
+    metadata.mime_type = "image/svg+xml"
+    metadata.extra["leak"] = "x"
+    fields
+  end
+end
+
 describe "Gemma::Uploader#custom_metadata" do
   before_each { reset_storages }
 
@@ -34,6 +49,25 @@ describe "Gemma::Uploader#custom_metadata" do
 
     uploaded_file.size.should eq(4)
     uploaded_file.metadata.extra.has_key?("size").should be_false
+  end
+
+  it "sees the dimensions a plugin found" do
+    UploaderMeasuringAspect.upload(image("320x180.jpg"), "store").metadata.extra["aspect"].should eq((320 / 180).to_s)
+  end
+
+  it "cannot change built-in fields or custom fields through the metadata it receives" do
+    uploaded_file = UploaderMeasuringAspect.upload(image, "store")
+
+    uploaded_file.mime_type.should eq("image/png")
+    uploaded_file.metadata.extra.has_key?("leak").should be_false
+  end
+
+  it "applies to a verified cached reference as well" do
+    cached = UploaderWithCustomMetadata.upload(fakeio("file"), "cache")
+    attacher = UploaderWithCustomMetadata::Attacher.new
+    attacher.attach_cached(Gemma::CachedFileReference.new(cached.id, "cache"))
+
+    attacher.file.try(&.metadata.extra["custom"]?).should eq("value")
   end
 
   it "adds nothing in the base uploader" do

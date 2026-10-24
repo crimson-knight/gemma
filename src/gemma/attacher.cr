@@ -102,6 +102,12 @@ module Gemma
         change(cached(reference))
       end
 
+      # Attaches the cached file a client's reference names, after checking
+      # that the cache issued it (see `#cached`).
+      def attach_cached(reference : CachedFileReference, **options)
+        change(cached(reference))
+      end
+
       def attach_cached(value : String | Hash(String, String), **options)
         change(cached(CachedFileReference.parse(value.is_a?(String) ? value : value.to_json)))
       end

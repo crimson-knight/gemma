@@ -106,7 +106,7 @@ module Gemma
         client_metadata.extra["declared_content_type"] = media_type
       end
       client_metadata = merge_caller_metadata(client_metadata, metadata)
-      extracted = extract_metadata(prefix, client_metadata)
+      extracted = analyze(prefix, client_metadata)
       store_stream(ReplayIO.new(prefix, io), location || generate_location(extracted), extracted, max_size)
     end
 
@@ -136,7 +136,7 @@ module Gemma
       stored_io = storage.open(id)
       begin
         prefix = Gemma.read_prefix(stored_io, SNIFF_BYTES)
-        metadata = extract_metadata(prefix, Metadata.new(filename: Filename.sanitize(filename)))
+        metadata = analyze(prefix, Metadata.new(filename: Filename.sanitize(filename)))
         metadata.size = prefix.size.to_i64 + count_remaining_bytes(stored_io)
         metadata
       ensure
@@ -163,15 +163,16 @@ module Gemma
     # the MIME type; plugins add to it and call `super`.
     def extract_metadata(prefix : Bytes, metadata : Metadata) : Metadata
       metadata.mime_type = detect_mime_type(prefix, metadata)
-      add_custom_metadata(metadata, custom_metadata(IO::Memory.new(prefix, writable: false), metadata))
       metadata
     end
 
     # Custom fields to store with each upload, computed from its first bytes
-    # (*io*, at most `SNIFF_BYTES`) and the metadata found so far. Override
-    # it in an uploader; the base uploader adds none. Built-in fields
-    # (`size`, `mime_type`, `width`, `height`, `filename`) come from the
-    # file and are ignored here.
+    # (*io*, at most `SNIFF_BYTES`) and *metadata*, a copy of everything
+    # found before it (plugins included, so `width` is set for an image with
+    # `StoreDimensions`). Override it in an uploader; the base uploader adds
+    # none. Built-in fields (`size`, `mime_type`, `width`, `height`,
+    # `filename`) come from the file: returning them, or changing them on
+    # the copy, has no effect.
     #
     # ```
     # class DocumentUploader < Gemma::Uploader
@@ -240,6 +241,16 @@ module Gemma
       else
         Analyzers::MagicBytes.extension_for(mime_type)
       end
+    end
+
+    # Runs the analyzers (`extract_metadata`, with plugins), then adds the
+    # uploader's `custom_metadata`.
+    private def analyze(prefix : Bytes, metadata : Metadata) : Metadata
+      extracted = extract_metadata(prefix, metadata)
+      view = extracted
+      view.extra = extracted.extra.dup
+      add_custom_metadata(extracted, custom_metadata(IO::Memory.new(prefix, writable: false), view))
+      extracted
     end
 
     private def add_custom_metadata(metadata : Metadata, fields : Hash(String, String)) : Nil

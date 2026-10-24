@@ -48,7 +48,8 @@ uploaded_file.url       # => "/uploads/store/0f1e...a9.png"
 
 The client's filename and custom fields can be passed; Gemma sanitizes the
 filename and ignores attempts to set `size`, `mime_type`, `width` or
-`height`, which always come from the file:
+`height`, which come from the file (unless an uploader opts in to the
+client's claim for unrecognized bytes; see Determine MIME Type):
 
 ```crystal
 Gemma.upload(file, "store", filename: "photo.png", metadata: {"album" => "trips"})
@@ -258,6 +259,8 @@ class PosterUploader < Gemma::Uploader
     Gemma::Plugins::StoreDimensions::Tools::Identify
   end
 end
+
+PosterUploader.dimensions_tool # => Identify
 ```
 
 ### Determine MIME Type
@@ -272,6 +275,9 @@ class DocumentUploader < Gemma::Uploader
     Gemma::Plugins::DetermineMimeType::Tools::File
   end
 end
+
+DocumentUploader.mime_type_tool             # => File
+DocumentUploader.upload(file, "store").mime_type # => "application/pdf"
 ```
 
 | Tool          | Description |
@@ -310,8 +316,29 @@ signed.metadata.extra["signature"]
 `load_plugin` and `finalize_plugins!` were removed; using them is a compile
 error that names the replacement. `include Gemma::Plugins::StoreDimensions`
 replaces `load_plugin(Gemma::Plugins::StoreDimensions, ...)`, a
-`custom_metadata` override replaces `AddMetadata`, and the `Column` plugin's
-methods are built into `Gemma::Attacher`.
+`custom_metadata` override replaces `AddMetadata` (it runs after the
+plugins, so it sees `width` and `height`), and the `Column` plugin's
+methods are built into `Gemma::Attacher` and read and write the
+`UploadedFile` JSON. An app that stored columns with its own
+`column_serializer` overrides `load_column` and `column_data` in its
+uploader's attacher:
+
+```crystal
+class LegacyUploader < Gemma::Uploader
+  class Attacher
+    def column_data : String?
+      file.try { |stored| "#{stored.storage_key}:#{stored.id}" }
+    end
+
+    def load_column(data : String) : Gemma::UploadedFile?
+      storage_key, id = data.split(':', 2)
+      load_data(Gemma::UploadedFile.new(id, storage_key))
+    end
+  end
+end
+
+LegacyUploader::Attacher.from_column("store:a1b2.png").column_data
+```
 
 ## Feature Progress
 

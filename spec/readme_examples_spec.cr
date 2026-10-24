@@ -53,7 +53,7 @@ private def readme_program(blocks : Array({Int32, String})) : String
 end
 
 describe "README" do
-  it "has Crystal examples that compile against this checkout" do
+  it "has Crystal examples that type-check against this checkout (the Grant block has its own probe)" do
     blocks = readme_crystal_blocks
     blocks.size.should be > 10
 
