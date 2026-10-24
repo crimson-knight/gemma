@@ -1,6 +1,6 @@
 card_version: 1
 library: gemma
-applies_to: "~> 0.6.0"
+applies_to: "~> 0.7.0"
 docs_entries:
   - src/gemma.cr
   - src/gemma/grant.cr
@@ -17,3 +17,5 @@ notes:
     text: "A storage adapter implements open(id : String, **options) : IO, url(id, **options) : String, exists?(id) : Bool, plus upload, delete, and clean. Gemma::Storage::Memory is a built-in adapter for this interface."
   - symbol: Gemma.configure
     text: "Register named adapters in Gemma.configure through config.storages, a Hash(String, Gemma::Storage::Base). Gemma.upload(io, storage, **options) returns Gemma::UploadedFile."
+  - symbol: Gemma::Storage::S3::Client
+    text: "Gemma::Storage::S3::Client.new(region, aws_access_key, aws_secret_key, endpoint : String? = nil, addressing_style : AddressingStyle? = nil) replaces Awscr::S3::Client; no require \"awscr-s3\". Addressing defaults to :virtual_hosted for AWS and DigitalOcean Spaces, :path for other endpoints. Failures raise Gemma::Storage::S3::ResponseError (status_code, response_body)."

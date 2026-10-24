@@ -37,3 +37,24 @@ jobs:
 
       - name: Run specs
         run: crystal spec
+
+      - name: Start MinIO
+        # Pinned by digest: MinIO RELEASE.2026-10-23T20-06-51Z (Chainguard build).
+        run: |
+          docker run -d --name gemma-minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=gemma-spec -e MINIO_ROOT_PASSWORD=gemma-spec-secret \
+            cgr.dev/chainguard/minio@sha256:73297936408b731668ca0e835ac9add1a35cb6026a125c2f0cd476d9ef48222c \
+            server /data
+          for attempt in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && exit 0
+            sleep 1
+          done
+          docker logs gemma-minio
+          exit 1
+
+      - name: Run S3 round-trip specs against MinIO
+        run: crystal spec spec/gemma/storage/s3_minio_spec.cr
+        env:
+          GEMMA_S3_TEST_ENDPOINT: http://localhost:9000
+          GEMMA_S3_TEST_ACCESS_KEY: gemma-spec # secret-scan-gate:allow (local MinIO test credential)
+          GEMMA_S3_TEST_SECRET_KEY: gemma-spec-secret # secret-scan-gate:allow (local MinIO test credential)
