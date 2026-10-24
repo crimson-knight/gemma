@@ -1,5 +1,3 @@
-require "habitat"
-
 class Gemma
   module Storage
     abstract class Base
