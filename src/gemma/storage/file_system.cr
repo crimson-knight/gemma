@@ -12,8 +12,8 @@ class Gemma
       DEFAULT_DIRECTORY_PERMISSIONS = 0o755
 
       def expanded_directory : String
-        if relative_prefix
-          File.expand_path(File.join(directory, relative_prefix.not_nil!))
+        if subdirectory = relative_prefix
+          File.expand_path(File.join(directory, subdirectory))
         else
           File.expand_path(directory)
         end
@@ -57,10 +57,9 @@ class Gemma
       # Opens the file on the given location in read mode. Accepts additional
       # `File.open` arguments.
       def open(id : String, **options) : File
-        # TODO pass other options
         File.open(path(id), mode: "rb")
-      rescue RuntimeError
-        raise Gemma::FileNotFound.new "file #{id.inspect} not found on storage"
+      rescue error : File::NotFoundError
+        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage", cause: error)
       end
 
       # Returns true if the file exists on the filesystem.
@@ -80,7 +79,8 @@ class Gemma
       # generated path.
       # def url(id, host : String? = nil, **options)
       def url(id : String, host : String? = nil, **options) : String
-        path = (relative_prefix ? relative_path(id) : path(id)).to_s
+        subdirectory = relative_prefix
+        path = (subdirectory ? relative_path(id, subdirectory) : path(id)).to_s
         host ? host + path : path
       end
 
@@ -129,8 +129,8 @@ class Gemma
         path
       end
 
-      private def relative_path(id : String)
-        Path["/"] / relative_prefix.not_nil! / id.gsub("/", File::SEPARATOR)
+      private def relative_path(id : String, subdirectory : String)
+        Path["/"] / subdirectory / id.gsub("/", File::SEPARATOR)
       end
 
       private def relative(path)
@@ -138,7 +138,9 @@ class Gemma
       end
 
       private def relative_prefix : String?
-        relative(prefix.not_nil!) if prefix
+        if configured_prefix = prefix
+          relative(configured_prefix)
+        end
       end
     end
   end

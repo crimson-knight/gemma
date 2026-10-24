@@ -22,7 +22,7 @@ end
 # followup-10-evidence/err_probe.cr: stdlib errors escaped where Gemma
 # promised its own.
 describe "err probe" do
-  it_reproduces_known_defect "raises Gemma::FileNotFound when FileSystem#open misses", fixed_in: "PR 3 (error types)" do
+  it "raises Gemma::FileNotFound when FileSystem#open misses" do
     root = temporary_root
     begin
       storage = Gemma::Storage::FileSystem.new(root)
@@ -32,16 +32,16 @@ describe "err probe" do
     end
   end
 
-  it_reproduces_known_defect "raises a Gemma::Error when an analyzer's command is not installed", fixed_in: "PR 3 (error types)" do
+  it "raises Gemma::AnalyzerMissing when an analyzer's command is not installed" do
     without_executables do
-      expect_raises(Gemma::Error) do
+      expect_raises(Gemma::AnalyzerMissing) do
         ErrProbeFileCommandUploader.determine_mime_type(fakeio("text"))
       end
     end
   end
 
   it "raises Gemma::Error for a storage that is not registered" do
-    expect_raises(Gemma::Error, %(storage "nope" isn't registered)) do
+    expect_raises(Gemma::StorageNotRegistered, %(storage "nope" isn't registered)) do
       Gemma::UploadedFile.new("x", "nope").url
     end
   end

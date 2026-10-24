@@ -8,13 +8,13 @@ class Gemma
           custom_metadata = Gemma::UploadedFile::MetadataType.new
 
           {% for name, decl in CUSTOM_METATADATA_FIELDS %}
-            result = {{decl}}.call
+            result = {{ decl }}.call
 
             if result.is_a?(Gemma::UploadedFile::MetadataType)
               custom_metadata = custom_metadata.merge(result)
             else
               data = Gemma::UploadedFile::MetadataType.new
-              data["{{name}}"] = result
+              data["{{ name }}"] = result
               custom_metadata = custom_metadata.merge(data)
             end
 

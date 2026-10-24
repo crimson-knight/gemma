@@ -21,8 +21,8 @@ def it_reproduces_known_defect(description : String, *, fixed_in : String, file 
   it(description, file: file, line: line, end_line: end_line) do
     begin
       block.call
-    rescue failure : Spec::AssertionFailed
-      reason = failure.message.to_s.lines.first? || "assertion failed"
+    rescue error : Spec::AssertionFailed
+      reason = error.message.to_s.lines.first? || "assertion failed"
       # GEMMA_SHOW_KNOWN_DEFECTS=1 prints why each defect still reproduces.
       STDOUT.puts "\n  [known defect] #{description}: #{reason}" if ENV["GEMMA_SHOW_KNOWN_DEFECTS"]?
       pending!("known defect (fix lands in #{fixed_in}): #{reason}", file, line)

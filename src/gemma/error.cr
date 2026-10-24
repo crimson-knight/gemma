@@ -1,6 +1,7 @@
 class Gemma
   # Base class for every error Gemma raises.
-  class Error < Exception; end
+  class Error < Exception
+  end
 
   # Raised when a file is not a valid IO.
   class InvalidFile < Error
@@ -9,11 +10,28 @@ class Gemma
     end
   end
 
-  # Raised by the storage in the #open method.
+  # Raised by a storage when the file it is asked for does not exist.
   class FileNotFound < Error
   end
 
-  # Raised by the attacher when assigned uploaded file is not cached.
+  # Raised by the attacher when an assigned uploaded file is not cached.
   class NotCached < Error
+  end
+
+  # Raised when a storage key has no storage registered in `Gemma.settings`.
+  class StorageNotRegistered < Error
+  end
+
+  # Raised by `Gemma::Attacher#file!` when no file is attached.
+  class NoFileAttached < Error
+  end
+
+  # Raised when an analyzer's external command (`file`, ImageMagick's
+  # `identify`) is not installed.
+  class AnalyzerMissing < Error
+  end
+
+  # Raised when an analyzer ran but could not read the file.
+  class AnalyzerFailed < Error
   end
 end

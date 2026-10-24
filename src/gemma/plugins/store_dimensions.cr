@@ -36,7 +36,7 @@ class Gemma
       module InstanceMethods
         # We update the metadata with "width" and "height".
         private def extract_metadata(io, **options) : Gemma::UploadedFile::MetadataType
-          width, height = self.class.extract_dimensions(io).as(Tuple(UInt16, UInt16))
+          width, height = self.class.extract_dimensions(io)
 
           super.merge({"width" => width, "height" => height})
         end
@@ -72,7 +72,7 @@ class Gemma
                        when Tools::Identify
                          extract_with_identify(io)
                        else
-                         raise Error.new "Unknown tool #{@tool} for StoreDimensions plugin"
+                         raise ArgumentError.new("Unknown tool #{@tool} for StoreDimensions plugin")
                        end
 
           io.rewind
@@ -82,8 +82,8 @@ class Gemma
 
         private def extract_with_fastimage(io)
           FastImage.dimensions!(io)
-        rescue FastImage::Error
-          raise Error.new("Cannot fetch dimensions for #{io}")
+        rescue error : FastImage::Error
+          raise AnalyzerFailed.new("cannot read image dimensions", cause: error)
         end
 
         private def extract_with_identify(io)
@@ -106,18 +106,20 @@ class Gemma
         private def identify(args : Array(String) = Array(String).new) : String
           stdout = IO::Memory.new
           stderr = IO::Memory.new
-          result = Process.run("identify",
-            args: args.push("-"),
-            output: stdout,
-            error: stderr,
-            input: @io
-          )
+          result = begin
+            Process.run("identify",
+              args: args.push("-"),
+              output: stdout,
+              error: stderr,
+              input: @io
+            )
+          rescue error : File::NotFoundError
+            raise AnalyzerMissing.new("ImageMagick's identify command is not installed", cause: error)
+          end
 
-          raise Error.new "identify command failed: #{stderr}" unless result.success?
+          raise AnalyzerFailed.new("identify command failed: #{stderr}") unless result.success?
 
           stdout.to_s.strip
-        rescue RuntimeError
-          raise Error.new("identify command-line tool is not installed")
         end
       end
     end

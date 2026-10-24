@@ -4,7 +4,7 @@ class Gemma
   class UploadedFile
     include JSON::Serializable
 
-    alias MetadataType = Hash(String, String | Int16 | UInt16 | Int32 | UInt32 | Int64 | UInt64 | Nil)
+    alias MetadataType = Hash(String, String | Int16 | UInt16 | Int32 | UInt32 | Int64 | UInt64?)
 
     struct Mapper
       include JSON::Serializable
@@ -19,7 +19,7 @@ class Gemma
 
     {% begin %}
       {% for method in %w[id storage_key metadata to_json] %}
-        delegate {{method.id}}, to: @mapper
+        delegate {{ method.id }}, to: @mapper
       {% end %}
     {% end %}
 
@@ -93,16 +93,18 @@ class Gemma
     # uploaded_file.open { |io| io.read } # the IO is automatically closed
     # ```
     #
-    def open(**options)
-      @io.not_nil!.close if @io
-      @io = _open(**options)
+    def open(**options) : IO
+      @io.try(&.close)
+      opened_io = _open(**options)
+      @io = opened_io
+      opened_io
     end
 
-    def open(**options, &block)
-      open(**options)
+    def open(**options, &)
+      opened_io = open(**options)
 
       begin
-        yield @io.not_nil!
+        yield opened_io
       ensure
         close
         @io = nil
@@ -131,13 +133,13 @@ class Gemma
     # uploaded_file.download { |tempfile| tempfile.gets_to_end } # tempfile is deleted
     # ```
     #
-    def download(**options, &block)
+    def download(**options, &)
       tempfile = download(**options)
-      yield(tempfile)
-    ensure
-      if tempfile
-        tempfile.not_nil!.close
-        tempfile.not_nil!.delete
+      begin
+        yield tempfile
+      ensure
+        tempfile.close
+        tempfile.delete
       end
     end
 
@@ -200,11 +202,17 @@ class Gemma
 
     # Returns the storage that this file was uploaded to.
     def storage : Gemma::Storage::Base
-      Gemma.find_storage(storage_key.not_nil!).not_nil!
+      Gemma.find_storage(storage_key)
     end
 
     def io : IO
-      (@io ||= _open).not_nil!
+      if opened_io = @io
+        return opened_io
+      end
+
+      opened_io = _open
+      @io = opened_io
+      opened_io
     end
 
     # Returns serializable hash representation of the uploaded file.
@@ -216,8 +224,8 @@ class Gemma
     # storage and it has the same #id.
     def ==(other : UploadedFile)
       self.class == other.class &&
-        self.id == other.id &&
-        self.storage_key == other.storage_key
+        id == other.id &&
+        storage_key == other.storage_key
     end
 
     private def _open(**options)

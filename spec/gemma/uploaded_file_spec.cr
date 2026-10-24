@@ -1,6 +1,6 @@
 require "../spec_helper"
 
-private def cached_file(id : String = "foo", filename : String? = nil, mime_type : String? = nil, size : Int32 | String | Nil = nil) : Gemma::UploadedFile
+private def cached_file(id : String = "foo", filename : String? = nil, mime_type : String? = nil, size : Int32 | String? = nil) : Gemma::UploadedFile
   metadata = Gemma::UploadedFile::MetadataType{
     "filename"  => filename,
     "mime_type" => mime_type,
