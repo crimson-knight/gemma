@@ -43,7 +43,7 @@ describe "Gemma::Grant::Attachable on a real Grant model" do
 
       avatar = saved_file(user.avatar)
       avatar.should be_a(Gemma::UploadedFile)
-      avatar.metadata["filename"].should eq("avatar.jpg")
+      avatar.original_filename.should eq("avatar.jpg")
     end
 
     it "returns a URL when a file is attached" do
@@ -68,7 +68,7 @@ describe "Gemma::Grant::Attachable on a real Grant model" do
       user.avatar = avatar_io
       user.save
 
-      user.avatar_data.try(&.["storage_key"]?).should eq("store")
+      user.avatar_data.try(&.storage_key).should eq("store")
       user.avatar_changed?.should be_false
     end
 
@@ -122,7 +122,7 @@ describe "Gemma::Grant::Attachable on a real Grant model" do
       post.remove_image(post.images[0])
 
       post.images.size.should eq(1)
-      post.images[0].metadata["filename"].should eq("image2.jpg")
+      post.images[0].original_filename.should eq("image2.jpg")
     end
 
     it "clears all attachments" do

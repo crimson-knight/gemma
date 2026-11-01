@@ -1,20 +1,18 @@
 require "../spec_helper"
 
-private def cached_file(id : String = "foo", filename : String? = nil, mime_type : String? = nil, size : Int32 | String? = nil) : Gemma::UploadedFile
-  metadata = Gemma::UploadedFile::MetadataType{
-    "filename"  => filename,
-    "mime_type" => mime_type,
-    "size"      => size,
-  }
-  Gemma::UploadedFile.new(id, "cache", metadata)
+private def cached_file(id : String = "foo", filename : String? = nil, mime_type : String? = nil, size : Int64? = nil) : Gemma::UploadedFile
+  Gemma::UploadedFile.new(id, "cache", Gemma::Metadata.new(filename: filename, mime_type: mime_type, size: size))
 end
 
 describe Gemma::UploadedFile do
-  after_each { reset_storages }
+  before_each { reset_storages }
 
   describe "#initialize" do
-    it "initializes metadata if absent" do
-      Gemma::UploadedFile.new("foo", "cache").metadata.should be_a(Gemma::UploadedFile::MetadataType)
+    it "starts with empty metadata" do
+      metadata = Gemma::UploadedFile.new("foo", "cache").metadata
+
+      metadata.size.should be_nil
+      metadata.extra.should be_empty
     end
   end
 
@@ -45,58 +43,42 @@ describe Gemma::UploadedFile do
       cached_file(filename: "foo").extension.should be_nil
     end
 
-    it "is nil without a filename in metadata" do
-      cached_file.extension.should be_nil
-    end
-
     it "prefers the extension from the id over the one from the filename" do
       cached_file(id: "foo.jpg", filename: "foo.png").extension.should eq("jpg")
     end
 
-    it "downcases an uppercase extension in the id" do
+    it "downcases an uppercase extension" do
       cached_file(id: "foo.JPG").extension.should eq("jpg")
-    end
-
-    it "downcases an uppercase extension in the filename" do
       cached_file(filename: "foo.PNG").extension.should eq("png")
     end
   end
 
-  describe "#size" do
-    it "returns nil without a size in metadata" do
+  describe "#size and #mime_type" do
+    it "read the metadata" do
+      file = cached_file(size: 50_i64, mime_type: "image/jpeg")
+
+      file.size.should eq(50)
+      file.mime_type.should eq("image/jpeg")
+      file.content_type.should eq("image/jpeg")
+    end
+
+    it "are nil when unknown" do
       cached_file.size.should be_nil
-    end
-
-    it "returns the size from metadata" do
-      cached_file(size: 50).size.should eq(50)
-    end
-
-    it "converts a String size to an integer" do
-      cached_file(size: "50").size.should eq(50)
-    end
-  end
-
-  describe "#mime_type" do
-    it "returns the mime_type from metadata" do
-      cached_file(mime_type: "image/jpeg").mime_type.should eq("image/jpeg")
-    end
-
-    it "has a #content_type alias" do
-      cached_file(mime_type: "image/jpeg").content_type.should eq("image/jpeg")
-    end
-
-    it "returns nil without a mime_type in metadata" do
       cached_file.mime_type.should be_nil
     end
   end
 
-  describe "#close" do
-    it "closes the underlying IO object" do
-      uploaded_file = uploader.upload(fakeio)
-      io = uploaded_file.io
-      uploaded_file.close
+  describe "#width, #height and #dimensions" do
+    it "read the metadata" do
+      file = Gemma::UploadedFile.new("foo", "cache", Gemma::Metadata.new(width: 300, height: 200))
 
-      io.closed?.should be_true
+      file.width.should eq(300)
+      file.height.should eq(200)
+      file.dimensions.should eq({300, 200})
+    end
+
+    it "have no dimensions when one side is unknown" do
+      Gemma::UploadedFile.new("foo", "cache", Gemma::Metadata.new(width: 300)).dimensions.should be_nil
     end
   end
 
@@ -114,73 +96,34 @@ describe Gemma::UploadedFile do
   end
 
   describe "#open" do
-    it "returns the underlying IO if no block is given" do
-      uploaded_file = uploader.upload(fakeio)
-
-      uploaded_file.open.should be_a(IO)
-      uploaded_file.open.closed?.should be_false
-    end
-
-    it "closes the previous IO" do
-      uploaded_file = uploader.upload(fakeio)
-      io1 = uploaded_file.open
-      io2 = uploaded_file.open
-
-      io1.should_not be(io2)
-      io1.closed?.should be_true
-      io2.closed?.should be_false
-    end
-
-    it "yields to the block if one is given" do
-      uploaded_file = uploader.upload(fakeio)
-
-      called = false
-      uploaded_file.open { called = true }
-      called.should be_true
-    end
-
-    it "yields the opened IO" do
+    it "returns a new IO each time, which the caller closes" do
       uploaded_file = uploader.upload(fakeio("file"))
-      uploaded_file.open do |io|
-        io.should be_a(IO)
-        io.gets_to_end.should eq("file")
-      end
+      first = uploaded_file.open
+      second = uploaded_file.open
+
+      first.should_not be(second)
+      first.gets_to_end.should eq("file")
+      second.gets_to_end.should eq("file")
+      first.close
+      second.close
     end
 
-    it "makes itself open as well" do
-      uploaded_file = uploader.upload(fakeio)
-      uploaded_file.open do |io|
-        io.should be(uploaded_file.io)
-      end
-    end
-
-    it "closes the IO after the block finishes" do
-      uploaded_file = uploader.upload(fakeio)
-
-      yielded_io = IO::Memory.new
-      uploaded_file.open { |io| yielded_io = io }
-      expect_raises(IO::Error) { yielded_io.gets_to_end }
-    end
-
-    it "can be read again after the block" do
+    it "yields the IO, returns the block's value and closes the IO" do
       uploaded_file = uploader.upload(fakeio("file"))
-      uploaded_file.open { }
+      yielded_io = nil
 
-      uploaded_file.gets_to_end.should eq("file")
-    end
-
-    it "opens even if it was closed" do
-      uploaded_file = uploader.upload(fakeio("file"))
-      uploaded_file.gets_to_end
-      uploaded_file.close
-      uploaded_file.open do |io|
-        io.gets_to_end.should eq("file")
+      content = uploaded_file.open do |io|
+        yielded_io = io
+        io.gets_to_end
       end
+
+      content.should eq("file")
+      yielded_io.try(&.closed?).should be_true
     end
 
-    it "closes the file even if an error occurred" do
+    it "closes the IO when the block raises" do
       uploaded_file = uploader.upload(fakeio)
-      yielded_io = IO::Memory.new
+      yielded_io = nil
 
       expect_raises(Exception, "error occurred") do
         uploaded_file.open do |io|
@@ -189,73 +132,72 @@ describe Gemma::UploadedFile do
         end
       end
 
-      yielded_io.closed?.should be_true
+      yielded_io.try(&.closed?).should be_true
     end
   end
 
   describe "#download" do
-    it "downloads file content to a Tempfile" do
+    it "streams the content into an open, rewound tempfile" do
       downloaded = uploader.upload(fakeio("file")).download
-
-      downloaded.should be_a(File)
-      downloaded.closed?.should be_false
-      downloaded.gets_to_end.should eq("file")
-    end
-
-    it "applies the extension from #id" do
-      uploaded_file = uploader.upload(fakeio, location: "foo.jpg")
-
-      uploaded_file.download.path.should end_with(".jpg")
-    end
-
-    it "applies the extension from #original_filename" do
-      uploaded_file = uploader.upload(fakeio(filename: "foo.jpg"), location: "foo")
-
-      uploaded_file.download.path.should end_with(".jpg")
-    end
-
-    it "yields the tempfile if a block is given" do
-      uploader.upload(fakeio).download do |tempfile|
-        tempfile.should be_a(File)
+      begin
+        downloaded.closed?.should be_false
+        downloaded.gets_to_end.should eq("file")
+      ensure
+        downloaded.delete
+        downloaded.close
       end
     end
 
-    it "returns the block's return value" do
-      uploader.upload(fakeio).download { |_tempfile| "result" }.should eq("result")
+    it "uses the extension of the id" do
+      downloaded = uploader.upload(fakeio, location: "foo.jpg").download
+      begin
+        downloaded.path.should end_with(".jpg")
+      ensure
+        downloaded.delete
+        downloaded.close
+      end
     end
 
-    it "closes and deletes the tempfile after the block" do
-      uploaded_file = uploader.upload(fakeio)
+    it "with a block, returns the block's value and deletes the tempfile" do
+      uploaded_file = uploader.upload(fakeio("file"))
+      path = ""
 
-      tempfile = uploaded_file.download do |yielded_tempfile|
-        yielded_tempfile.closed?.should be_false
-        yielded_tempfile
+      content = uploaded_file.download do |tempfile|
+        path = tempfile.path
+        tempfile.gets_to_end
       end
 
-      tempfile.closed?.should be_true
-      File.exists?(tempfile.path).should be_false
+      content.should eq("file")
+      File.exists?(path).should be_false
+    end
+
+    it "deletes the tempfile when streaming fails" do
+      missing = Gemma::UploadedFile.new("missing", "store")
+      before = Dir.children(Dir.tempdir).count(&.starts_with?("gemma"))
+
+      expect_raises(Gemma::FileNotFound) { missing.download }
+
+      Dir.children(Dir.tempdir).count(&.starts_with?("gemma")).should eq(before)
     end
   end
 
   describe "#stream" do
-    it "opens and closes the file when it was not open" do
-      uploaded_file = uploader.upload(fakeio("content"))
+    it "copies the content into the destination" do
       destination = IO::Memory.new
-      uploaded_file.stream(destination)
+      uploader.upload(fakeio("content")).stream(destination)
 
       destination.to_s.should eq("content")
-      uploaded_file.opened?.should be_false
     end
   end
 
   describe "#replace" do
     it "uploads another file to the same location" do
       uploaded_file = uploader.upload(fakeio("file"))
-      new_uploaded_file = uploaded_file.replace(fakeio("replaced"))
+      replaced = uploaded_file.replace(fakeio("replaced"))
 
-      new_uploaded_file.id.should eq(uploaded_file.id)
-      new_uploaded_file.gets_to_end.should eq("replaced")
-      new_uploaded_file.size.should eq("replaced".size)
+      replaced.id.should eq(uploaded_file.id)
+      replaced.open(&.gets_to_end).should eq("replaced")
+      replaced.size.should eq("replaced".bytesize)
     end
   end
 
@@ -268,16 +210,34 @@ describe Gemma::UploadedFile do
     end
   end
 
-  describe "#data" do
-    it "returns the uploaded file data hash" do
-      metadata = Gemma::UploadedFile::MetadataType{"foo" => "bar"}
-      uploaded_file = Gemma::UploadedFile.new("foo", "cache", metadata)
+  describe "#==" do
+    it "compares the id and the storage" do
+      cached_file(id: "a", size: 1_i64).should eq(cached_file(id: "a", size: 2_i64))
+      cached_file(id: "a").should_not eq(cached_file(id: "b"))
+      cached_file(id: "a").should_not eq(Gemma::UploadedFile.new("a", "store"))
+    end
+  end
 
-      uploaded_file.data.should eq({
-        "id"          => "foo",
-        "storage_key" => "cache",
-        "metadata"    => metadata,
-      })
+  describe "JSON" do
+    it "writes the shape Gemma has always stored" do
+      metadata = Gemma::Metadata.new(filename: "a.png", size: 753_i64, mime_type: "image/png", width: 300, height: 300)
+      metadata.extra["album"] = "trips"
+
+      JSON.parse(Gemma::UploadedFile.new("foo.png", "store", metadata).to_json).should eq(JSON.parse(<<-JSON))
+        {"id": "foo.png", "storage_key": "store", "metadata":
+          {"filename": "a.png", "size": 753, "mime_type": "image/png", "width": 300, "height": 300, "album": "trips"}}
+        JSON
+    end
+
+    it "round-trips" do
+      metadata = Gemma::Metadata.new(filename: "a.png", size: 753_i64, mime_type: "image/png", width: 300, height: 300)
+      metadata.extra["album"] = "trips"
+      file = Gemma::UploadedFile.new("foo.png", "store", metadata)
+
+      loaded = Gemma::UploadedFile.from_json(file.to_json)
+
+      loaded.should eq(file)
+      loaded.metadata.should eq(metadata)
     end
   end
 end

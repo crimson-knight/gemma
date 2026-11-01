@@ -48,3 +48,12 @@ end
 def temporary_root : String
   File.join(Dir.tempdir, "gemma-spec-#{Random::Secure.hex(8)}")
 end
+
+# The bytes of a fixture under `spec/support/fixtures`.
+def fixture_bytes(basename : String) : Bytes
+  File.read(File.join(SPEC_SUPPORT_DIRECTORY, "fixtures", basename)).to_slice
+end
+
+def fixture(basename : String) : File
+  File.open(File.join(SPEC_SUPPORT_DIRECTORY, "fixtures", basename))
+end

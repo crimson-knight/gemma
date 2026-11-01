@@ -40,9 +40,16 @@ describe "persist probe" do
     memory_storage("store").store.size.should eq(0)
   end
 
-  it_reproduces_known_defect "rejects a file of unknown type when only images are accepted", fixed_in: "PR 5 (content sniffing) and PR 7 (validators)" do
+  it "rejects a text file when only images are accepted" do
     profile = IntegrationProfile.new
     profile.cover = IO::Memory.new("plain text, not an image")
+
+    profile.save.should be_false
+  end
+
+  it_reproduces_known_defect "rejects a file of unknown type when only images are accepted", fixed_in: "PR 7 (validators)" do
+    profile = IntegrationProfile.new
+    profile.cover = IO::Memory.new("\u0000\u0001 bytes no analyzer recognizes")
 
     profile.save.should be_false
   end

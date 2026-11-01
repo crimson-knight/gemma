@@ -5,6 +5,8 @@
 /.minecart/
 /.crystal-cache/
 /spec/tmp/
+# AI docs that minecart installs from development shards.
+/.claude/
 *.dwarf
 
 # shard.lock is committed. Gemma has no runtime dependencies, so the lock

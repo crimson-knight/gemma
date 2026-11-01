@@ -10,8 +10,8 @@ GRANT_SPEC_DATABASE_PATH = File.join(Dir.tempdir, "gemma-grant-spec-#{Process.pi
 
 Grant::Connections << Grant::Adapter::Sqlite.new(name: "sqlite", url: "sqlite3://#{GRANT_SPEC_DATABASE_PATH}")
 
-# The column type Gemma's Grant layer reads and writes today.
-alias AttachmentData = Hash(String, String | Gemma::UploadedFile::MetadataType)
+# The column type Gemma's Grant layer reads and writes.
+alias AttachmentData = Gemma::UploadedFile
 
 class IntegrationUser < Grant::Base
   connection sqlite
@@ -42,8 +42,8 @@ end
 
 # An uploader that stores files under `test/`.
 class PrefixedLocationUploader < Gemma
-  def generate_location(io : IO | UploadedFile, metadata, **options)
-    File.join("test", super(io, metadata, **options))
+  def generate_location(metadata : Gemma::Metadata) : String
+    File.join("test", super)
   end
 end
 

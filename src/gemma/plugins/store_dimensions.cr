@@ -1,63 +1,64 @@
-require "fastimage"
-
 class Gemma
   module Plugins
+    # Records image width and height in each upload's metadata
+    # (`Metadata#width`, `Metadata#height`). Files that are not images, or
+    # whose header the analyzer cannot read, are stored without dimensions.
+    #
+    # - `Tools::Header` (default): Gemma's header reader for PNG, GIF, JPEG,
+    #   WebP and BMP, with no external command.
+    # - `Tools::Identify`: ImageMagick's `identify`, fed the upload's first
+    #   bytes. Opt-in; it needs ImageMagick installed.
+    #
+    # ```
+    # class AvatarUploader < Gemma
+    #   load_plugin Gemma::Plugins::StoreDimensions
+    #
+    #   finalize_plugins!
+    # end
+    #
+    # AvatarUploader.upload(png, "store").metadata.width # => 300
+    # ```
     module StoreDimensions
       DEFAULT_OPTIONS = {
-        analyzer: :fastimage,
+        analyzer: Gemma::Plugins::StoreDimensions::Tools::Header,
       }
 
+      enum Tools
+        Header
+        Identify
+      end
+
       module ClassMethods
-        # Determines the dimensions of the IO object by calling the specified
-        # analyzer.
-        def extract_dimensions(io)
-          config = plugin_settings.store_dimensions
-          analyzer = dimensions_analyzer(config[:analyzer])
-
-          dimensions = analyzer.call(io)
-          io.rewind
-
-          dimensions
+        # Reads the dimensions of the image *io* starts with, raising
+        # `Gemma::AnalyzerFailed` when it has none. Reads the first
+        # `SNIFF_BYTES` of *io* and does not rewind it.
+        def extract_dimensions(io : IO) : {Int32, Int32}
+          prefix = Gemma.read_prefix(io, Gemma::SNIFF_BYTES)
+          dimensions_analyzer.call(prefix) || raise AnalyzerFailed.new("cannot read image dimensions")
         end
 
-        # Returns a hash of built-in MIME type analyzers, where keys are
-        # analyzer names and values are `#call`-able objects which accepts the
-        # IO object.
-        def dimensions_analyzers
-          StoreDimensions::Tools
-        end
-
-        # Returns callable mime type analyzer object.
-        def dimensions_analyzer(name : Tools)
-          DimensionsAnalyzer.new(name)
+        # Returns the analyzer configured for this uploader.
+        def dimensions_analyzer : DimensionsAnalyzer
+          DimensionsAnalyzer.new(plugin_settings.store_dimensions[:analyzer])
         end
       end
 
       module InstanceMethods
-        # We update the metadata with "width" and "height".
-        private def extract_metadata(io, **options) : Gemma::UploadedFile::MetadataType
-          width, height = self.class.extract_dimensions(io)
-
-          super.merge({"width" => width, "height" => height})
-        end
-      end
-
-      enum Tools
-        FastImage
-        Identify
-      end
-
-      module FileMethods
-        def width : UInt16
-          metadata["width"]
+        def extract_metadata(prefix : Bytes, metadata : Metadata) : Metadata
+          metadata = super
+          if metadata.mime_type.try(&.starts_with?("image/"))
+            if found = image_dimensions(prefix)
+              metadata.width, metadata.height = found
+            end
+          end
+          metadata
         end
 
-        def height : UInt16
-          metadata["height"]
-        end
-
-        def dimensions : Tuple(UInt16)
-          {width, height} if width || height
+        private def image_dimensions(prefix : Bytes) : {Int32, Int32}?
+          self.class.dimensions_analyzer.call(prefix)
+        rescue error : AnalyzerFailed
+          Log.warn(exception: error) { "stored an image without dimensions" }
+          nil
         end
       end
 
@@ -65,66 +66,49 @@ class Gemma
         def initialize(@tool : Tools)
         end
 
-        def call(io : IO) : Tuple(UInt16, UInt16)
-          dimensions = case @tool
-                       when Tools::FastImage
-                         extract_with_fastimage(io)
-                       when Tools::Identify
-                         extract_with_identify(io)
-                       else
-                         raise ArgumentError.new("Unknown tool #{@tool} for StoreDimensions plugin")
-                       end
-
-          io.rewind
-
-          dimensions
-        end
-
-        private def extract_with_fastimage(io)
-          FastImage.dimensions!(io)
-        rescue error : FastImage::Error
-          raise AnalyzerFailed.new("cannot read image dimensions", cause: error)
-        end
-
-        private def extract_with_identify(io)
-          IdentifyAnalyzer.new(io).dimensions
+        # Returns `{width, height}` for the image *prefix* starts with, or nil.
+        def call(prefix : Bytes) : {Int32, Int32}?
+          if @tool.identify?
+            IdentifyAnalyzer.new(prefix).dimensions
+          else
+            Analyzers::ImageDimensions.dimensions(prefix)
+          end
         end
       end
 
-      # A bare-bones wrapper for ImageMagick's identify command
+      # Runs ImageMagick's `identify` on an image's first bytes.
       class IdentifyAnalyzer
-        def initialize(@io : IO)
+        def initialize(@prefix : Bytes)
         end
 
-        # Extract dimensions from a given file
-        def dimensions : Tuple(UInt16, UInt16)
-          output = identify(["-format", "%[fx:w] %[fx:h]"])
-          width, height = output.split.map(&.to_u16?)
-          unless width && height
+        def dimensions : {Int32, Int32}
+          output = identify("-format", "%[fx:w] %[fx:h]\n")
+          first_frame = output.lines.first? || ""
+          values = first_frame.split.map(&.to_i32?)
+          width = values[0]?
+          height = values[1]?
+          unless width && height && width > 0 && height > 0
             raise AnalyzerFailed.new("identify printed #{output.inspect}, not a width and a height")
           end
 
           {width, height}
-        rescue error : IndexError
-          raise AnalyzerFailed.new("identify printed no dimensions", cause: error)
         end
 
-        # Execute an identify command
-        private def identify(args : Array(String) = Array(String).new) : String
+        private def identify(*args : String) : String
           stdout = IO::Memory.new
           stderr = IO::Memory.new
-          result = begin
+          status = begin
             Process.run("identify",
-              args: args.push("-"),
+              args: [*args, "-"],
               output: stdout,
               error: stderr,
-              input: @io
+              input: IO::Memory.new(@prefix, writable: false)
             )
           rescue error : File::NotFoundError
             raise AnalyzerMissing.new("ImageMagick's identify command is not installed", cause: error)
           end
 
-          raise AnalyzerFailed.new("identify command failed: #{stderr}") unless result.success?
+          raise AnalyzerFailed.new("identify command failed: #{stderr}") unless status.success?
 
           stdout.to_s.strip
         end

@@ -7,7 +7,7 @@ class Gemma
       # Copies everything *io* has left into the location *id*. *metadata*
       # describes the file (a storage may turn `filename` and `mime_type`
       # into headers). The storage never closes *io*.
-      abstract def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
+      abstract def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
 
       # Returns the file at *id* opened for reading. The caller closes it.
       # Raises `Gemma::FileNotFound` when there is no such file.

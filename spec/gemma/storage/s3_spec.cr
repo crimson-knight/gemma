@@ -12,12 +12,8 @@ private def s3_storage(prefix : String? = nil) : Gemma::Storage::S3
   )
 end
 
-private def s3_metadata : Gemma::UploadedFile::MetadataType
-  Gemma::UploadedFile::MetadataType{
-    "filename"  => "résumé photo.jpg",
-    "mime_type" => "image/jpeg",
-    "size"      => "50",
-  }
+private def s3_metadata : Gemma::Metadata
+  Gemma::Metadata.new(filename: "résumé photo.jpg", mime_type: "image/jpeg", size: 50_i64)
 end
 
 describe Gemma::Storage::S3 do
@@ -63,6 +59,22 @@ describe Gemma::Storage::S3 do
       request.headers["X-Amz-Content-Sha256"].should eq(Digest::SHA256.hexdigest("binary\u0000data"))
       request.headers["Authorization"].should contain("content-disposition;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date")
       request.headers.has_key?("metadata").should be_false
+    end
+
+    it "sends an SVG as an attachment, so a browser never runs its script inline" do
+      sent_request = nil
+      WebMock.stub(:put, "#{S3_SPEC_HOST}/drawing.svg").to_return do |request|
+        sent_request = request
+        HTTP::Client::Response.new(200)
+      end
+
+      s3_storage.upload(FakeIO.new("<svg><script>alert(1)</script></svg>"), "drawing.svg",
+        Gemma::Metadata.new(filename: "drawing.svg", mime_type: "image/svg+xml"))
+
+      request = sent_request
+      raise "the PUT never reached the stub" unless request
+      request.headers["Content-Disposition"].should start_with("attachment;")
+      request.headers["Content-Type"].should eq("image/svg+xml")
     end
 
     it "raises a ResponseError with the status code and raw body when the service refuses" do

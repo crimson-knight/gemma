@@ -1,6 +1,10 @@
 require "log"
 
 require "./gemma/error"
+require "./gemma/metadata"
+require "./gemma/filename"
+require "./gemma/streaming"
+require "./gemma/analyzers/*"
 require "./gemma/settings"
 require "./gemma/storage/*"
 require "./gemma/attacher"
@@ -95,18 +99,6 @@ class Gemma
       extend {{ plugin.constant(:ClassMethods) }}
     {% end %}
 
-    {% if plugin.constant(:FileClassMethods) %}
-      class UploadedFile < Gemma::UploadedFile
-        extend {{ plugin.constant(:FileClassMethods) }}
-      end
-    {% end %}
-
-    {% if plugin.constant(:FileMethods) %}
-      class UploadedFile < Gemma::UploadedFile
-        include {{ plugin.constant(:FileMethods) }}
-      end
-    {% end %}
-
     {% if plugin.constant(:AttacherClassMethods) %}
       class Attacher < Gemma::Attacher
         extend {{ plugin.constant(:AttacherClassMethods) }}
@@ -164,20 +156,22 @@ class Gemma
       settings.storages[name]? || raise StorageNotRegistered.new("storage #{name.inspect} isn't registered on #{self}")
     end
 
-    # Uploads the file to the specified storage. It delegates to `Gemma#upload`.
+    # Uploads *io* to the storage named *storage*. See `Gemma#upload`.
     #
     # ```
-    # Gemma.upload(io, :store) # => #<Gemma::UploadedFile>
+    # Gemma.upload(io, "store") # => #<Gemma::UploadedFile>
     # ```
-    def upload(io, storage, **options)
+    def upload(io, storage : String, **options) : UploadedFile
       new(storage).upload(io, **options)
     end
 
-    def cache(io, **options)
+    # Uploads *io* to the "cache" storage.
+    def cache(io, **options) : UploadedFile
       new("cache").upload(io, **options)
     end
 
-    def store(io, **options)
+    # Uploads *io* to the "store" storage.
+    def store(io, **options) : UploadedFile
       new("store").upload(io, **options)
     end
 
@@ -186,34 +180,30 @@ class Gemma
     def raise_if_missing_settings! : Nil
     end
 
-    def uploaded_file(hash : Hash(String, String | UploadedFile::MetadataType))
-      uploaded_file(hash.to_json)
-    end
-
-    def uploaded_file(json : String)
+    # Loads an `UploadedFile` from the JSON Gemma stored. Only for trusted
+    # data such as a database column; a client's JSON goes through
+    # `Gemma::Attacher#attach_cached`, which verifies it.
+    def uploaded_file(json : String) : UploadedFile
       UploadedFile.from_json(json)
     end
 
-    def uploaded_file(object : UploadedFile)
+    def uploaded_file(object : UploadedFile) : UploadedFile
       object
     end
 
-    # Temporarily converts an IO-like object into a file. If the input IO object
-    # is already a file, it simply yields it to the block, otherwise it copies
-    # IO content into a Tempfile object which is then yielded and afterwards
-    # deleted.
+    # Yields *io* if it is already a file, or else a tempfile holding what
+    # is left of *io*, deleted after the block.
     #
     # ```
-    # Gemma.with_file(io) { |file| file.path }
+    # Gemma.with_file(io, &.path)
     # ```
-    #
     def with_file(io : IO, &)
-      if io.responds_to?(:path)
+      if io.is_a?(File)
         yield io
       else
         File.tempfile("gemma-file") do |file|
-          File.write(file.path, io.gets_to_end)
-          io.rewind
+          IO.copy(io, file)
+          file.rewind
           yield file
         end
       end
@@ -237,53 +227,119 @@ class Gemma
     def initialize(@storage_key : String)
     end
 
-    # Returns the storage object referenced by the identifier.
-    def storage
+    # Returns the storage this uploader writes to.
+    def storage : Storage::Base
       self.class.find_storage(storage_key)
     end
 
-    # Uploads *io* (an `IO`, or an `UploadedFile` on another storage) to
-    # this uploader's storage and returns the stored file. Gemma never
-    # closes or deletes an IO it did not open: the caller still owns *io*
-    # afterwards.
+    # The largest upload this uploader accepts, in bytes, or nil for no
+    # limit. Override it in an uploader:
+    #
+    # ```
+    # class AvatarUploader < Gemma
+    #   def max_size : Int64?
+    #     5_000_000_i64
+    #   end
+    # end
+    # ```
+    def max_size : Int64?
+      nil
+    end
+
+    # Streams *io* to this uploader's storage and returns the stored file.
+    #
+    # Gemma reads the first bytes to detect the MIME type (and, with
+    # plugins, dimensions), counts the bytes as they stream, and raises
+    # `Gemma::FileTooLarge` past *max_size*, leaving nothing in storage. It
+    # never rewinds, closes or deletes *io*, so a pipe or a request body
+    # works and the caller still owns *io* afterwards.
+    #
+    # - *filename*: the client's filename (otherwise read from the IO's
+    #   `original_filename` or `path`); it is sanitized.
+    # - *declared_content_type*: the client's `Content-Type`, recorded as
+    #   `extra["declared_content_type"]` and never used as the MIME type.
+    # - *metadata*: custom fields. Only `filename` and custom keys are taken;
+    #   `size`, `mime_type`, `width` and `height` always come from the bytes.
+    # - *location*: where to store it; by default a random name with an
+    #   extension that matches the detected type.
     #
     # ```
     # uploader.upload(io)
-    # uploader.upload(io, metadata: {"foo" => "bar"}) # add metadata
-    # uploader.upload(io, location: "path/to/file")   # choose the location
+    # uploader.upload(io, filename: "photo.jpg", metadata: {"album" => "trips"})
     # ```
-    def upload(io : IO | UploadedFile, **options) : UploadedFile
-      metadata = get_metadata(io, **options)
-      location = get_location(io, **options.merge(metadata: metadata))
+    def upload(io : IO, *, location : String? = nil, filename : String? = nil, declared_content_type : String? = nil, metadata : Hash(String, String)? = nil, max_size : Int64? = self.max_size) : UploadedFile
+      client_filename = filename || Gemma.client_filename(io)
+      prefix = Gemma.read_prefix(io, SNIFF_BYTES)
+      client_metadata = Metadata.new(filename: Filename.sanitize(client_filename))
+      declared = declared_content_type || Gemma.declared_content_type(io)
+      if declared && (media_type = Gemma.media_type(declared))
+        client_metadata.extra["declared_content_type"] = media_type
+      end
+      client_metadata = merge_caller_metadata(client_metadata, metadata)
+      extracted = extract_metadata(prefix, client_metadata)
+      store_stream(ReplayIO.new(prefix, io), location || generate_location(extracted), extracted, max_size)
+    end
 
-      store_content(io, location, metadata)
+    # Copies *source* (a file on another storage) to this uploader's
+    # storage. Its bytes are analyzed again, as for any upload; only its
+    # original filename and custom fields carry over.
+    def upload(source : UploadedFile, *, location : String? = nil, max_size : Int64? = self.max_size) : UploadedFile
+      source_io = source.storage.open(source.id)
+      begin
+        upload(source_io, location: location, filename: source.original_filename, metadata: source.metadata.extra, max_size: max_size)
+      ensure
+        source_io.close
+      end
+    end
 
-      UploadedFile.new(
-        id: location,
-        storage_key: storage_key,
-        metadata: metadata,
-      )
+    # Uploads a multipart part: anything shaped like `Amber::Router::File`
+    # (`#file`, `#filename`, `#headers`). The client's original filename
+    # and `Content-Type` come from the part, not from the tempfile's name.
+    def upload(part, *, location : String? = nil, metadata : Hash(String, String)? = nil, max_size : Int64? = self.max_size) : UploadedFile
+      upload(part.file, location: location, filename: part.filename, declared_content_type: part.headers["Content-Type"]?, metadata: metadata, max_size: max_size)
     end
 
     # Returns the metadata of the file already stored at *id* on this
     # uploader's storage, read from the stored bytes. *filename* is recorded
     # as the original filename; nothing else is taken from the caller.
-    def extract_stored_metadata(id : String, filename : String? = nil) : UploadedFile::MetadataType
+    def extract_stored_metadata(id : String, filename : String? = nil) : Metadata
       stored_io = storage.open(id)
       begin
-        metadata = extract_metadata(stored_io)
+        prefix = Gemma.read_prefix(stored_io, SNIFF_BYTES)
+        metadata = extract_metadata(prefix, Metadata.new(filename: Filename.sanitize(filename)))
+        metadata.size = prefix.size.to_i64 + count_remaining_bytes(stored_io)
+        metadata
       ensure
         stored_io.close
       end
-      metadata["filename"] = filename
+    end
+
+    # Generates a location: 32 random hex characters, plus an extension
+    # that matches the detected MIME type. Override it to choose your own.
+    def generate_location(metadata : Metadata) : String
+      basename = generate_uid
+      extension = location_extension(metadata)
+      extension ? "#{basename}.#{extension}" : basename
+    end
+
+    # 32 hex characters from the system's secure random source.
+    def generate_uid : String
+      Random::Secure.hex(16)
+    end
+
+    # Fills *metadata* from the upload's first bytes (*prefix*, at most
+    # `SNIFF_BYTES`). *metadata* arrives holding the client's filename,
+    # declared content type and custom fields. The base uploader detects
+    # the MIME type; plugins add to it and call `super`.
+    def extract_metadata(prefix : Bytes, metadata : Metadata) : Metadata
+      metadata.mime_type = detect_mime_type(prefix, metadata)
       metadata
     end
 
-    # Generates a unique location for the uploaded file, preserving the
-    # file extension. Can be overriden in uploaders for generating custom
-    # location.
-    def generate_location(io : IO | UploadedFile, metadata, **options)
-      basic_location(io, metadata: metadata)
+    # Detects the MIME type from the first bytes with the built-in
+    # magic-byte sniffer. Plugins may override it.
+    def detect_mime_type(prefix : Bytes, metadata : Metadata) : String?
+      Analyzers::MagicBytes.mime_type(prefix)
     end
 
     # Logs *message* as a warning on Gemma's log source.
@@ -291,101 +347,93 @@ class Gemma
       Log.warn { message }
     end
 
-    # Extracts filename, size and MIME type from the file, which is later
-    # accessible through UploadedFile#metadata.
-    private def extract_metadata(io, **options) : Gemma::UploadedFile::MetadataType
-      hash = Gemma::UploadedFile::MetadataType.new
-      hash["filename"] = extract_filename(io)
-      hash["size"] = extract_size(io)
-      hash["mime_type"] = extract_mime_type(io)
-      hash
-    end
-
-    # Streams *io* to the storage, leaving it open for the caller.
-    private def store_content(io : IO, location : String, metadata : UploadedFile::MetadataType) : Nil
-      storage.upload(io, location, metadata)
-    end
-
-    # Opens *source* on its own storage and streams it across.
-    private def store_content(source : UploadedFile, location : String, metadata : UploadedFile::MetadataType) : Nil
-      source_io = source.storage.open(source.id)
+    private def store_stream(io : IO, location : String, metadata : Metadata, max_size : Int64?) : UploadedFile
+      body = SizeLimitedIO.new(io, max_size)
+      # Gemma's storages write nothing when an upload fails; a custom one
+      # may leave part of the file. Remove that, but never a file that was
+      # at *location* before (a `replace` that was too large).
+      location_was_free = max_size.nil? || !storage.exists?(location)
       begin
-        storage.upload(source_io, location, metadata)
-      ensure
-        source_io.close
+        storage.upload(body, location, metadata)
+      rescue error : FileTooLarge
+        storage.delete(location) if location_was_free
+        raise error
       end
+
+      stored_metadata = metadata
+      stored_metadata.extra = metadata.extra.dup
+      stored_metadata.size = body.bytes_read
+      UploadedFile.new(location, storage_key, stored_metadata)
     end
 
-    # Attempts to extract the appropriate filename from the IO object.
-    private def extract_filename(io) : String?
-      if io.responds_to?(:original_filename)
-        io.original_filename
-      elsif io.responds_to?(:path)
-        # Some IO types report a nilable path.
-        if file_path = io.path
-          File.basename(file_path.to_s)
+    # Takes the caller's `filename` and custom fields; drops built-in fields,
+    # which only the bytes may set.
+    private def merge_caller_metadata(metadata : Metadata, caller_metadata : Hash(String, String)?) : Metadata
+      return metadata unless caller_metadata
+
+      caller_metadata.each do |key, value|
+        if key == "filename"
+          metadata.filename = Filename.sanitize(value)
+        elsif Metadata::BUILT_IN_KEYS.includes?(key)
+          Log.debug { "ignored caller metadata #{key.inspect}: Gemma reads it from the file" }
+        else
+          metadata.extra[key] = value
         end
       end
+      metadata
     end
 
-    # Extracts the filesize from the IO object.
-    private def extract_size(io)
-      io.size if io.responds_to?(:size)
+    # The extension for a generated location: the client's extension when
+    # it is a usual one for the detected type, else the type's canonical
+    # extension. An unknown type gets none, so an upload of unknown content
+    # can never be stored as `.html`.
+    private def location_extension(metadata : Metadata) : String?
+      mime_type = metadata.mime_type
+      return unless mime_type
+
+      client_extension = metadata.filename.try { |name| File.extname(name).lchop('.').downcase }
+      if client_extension && client_extension.matches?(/\A[a-z0-9]{1,10}\z/) && Analyzers::MagicBytes.extension_matches?(client_extension, mime_type)
+        client_extension
+      else
+        Analyzers::MagicBytes.extension_for(mime_type)
+      end
     end
 
-    # Attempts to extract the MIME type from the IO object.
-    private def extract_mime_type(io : IO)
-      return unless io.responds_to?(:content_type)
-
-      declared_content_type = io.content_type
-      return unless declared_content_type
-
-      Log.warn { "The \"mime_type\" metadata comes from the client's Content-Type header, which might not hold the actual MIME type of the file. Load the determine_mime_type plugin to read it from the file content." }
-      declared_content_type.split(';').first # exclude media type parameters
+    private def count_remaining_bytes(io : IO) : Int64
+      buffer = Bytes.new(64 * 1024)
+      total = 0_i64
+      while (count = io.read(buffer)) > 0
+        total += count
+      end
+      total
     end
+  end
 
-    private def extract_mime_type(io : UploadedFile)
-      io.metadata.mime_type
+  # The client's filename for *io*: its `original_filename` (multipart
+  # parts and similar wrappers), or else the basename of its `path`.
+  def self.client_filename(io : IO) : String?
+    if io.responds_to?(:original_filename)
+      io.original_filename.try(&.to_s)
+    elsif io.responds_to?(:path)
+      # Some IO types report a nilable path.
+      if file_path = io.path
+        File.basename(file_path.to_s)
+      end
     end
+  end
 
-    # Generates a basic location for an uploaded file
-    private def basic_location(io, metadata : UploadedFile::MetadataType)
-      extension = ".#{io.extension}" if io.is_a?(UploadedFile) && io.extension
-      filename = metadata["filename"]?
-      extension ||= File.extname(filename) if filename.is_a?(String)
-      basename = generate_uid(io)
+  # The client's declared `Content-Type` for *io*, without parameters.
+  def self.declared_content_type(io : IO) : String?
+    return unless io.responds_to?(:content_type)
 
-      extension ? basename + extension : basename
-    end
+    declared = io.content_type
+    media_type(declared.to_s) if declared
+  end
 
-    # If the IO object is a Gemma::UploadedFile, it simply copies over its
-    # metadata, otherwise it calls #extract_metadata.
-    private def get_metadata(io : IO, metadata : UploadedFile::MetadataType? = nil, **options)
-      result = extract_metadata(io)
-      result = result.merge(metadata) if metadata
-      result
-    end
-
-    private def get_metadata(io : UploadedFile, metadata : UploadedFile::MetadataType? = nil, **options)
-      result = io.metadata
-      result = result.merge(metadata) if metadata
-      result
-    end
-
-    # Retrieves the location for the given IO and context. First it looks
-    # for the `:location` option, otherwise it calls #generate_location.
-    private def get_location(io, location : String? = nil, **options)
-      location ||= generate_location(io, **options)
-      raise Error.new("location generated for #{io.inspect} was nil") if location.nil?
-
-      location
-    end
-
-    # Generates a unique identifier that can be used for a location: 32
-    # hex characters from the system's secure random source.
-    def generate_uid(io) : String
-      Random::Secure.hex(16)
-    end
+  # The media type of a `Content-Type` value, lowercased and without
+  # parameters: `"Text/Plain; charset=utf-8"` gives `"text/plain"`.
+  def self.media_type(content_type : String) : String?
+    content_type.split(';').first.strip.downcase.presence
   end
 
   include InstanceMethods
