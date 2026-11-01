@@ -3,8 +3,8 @@ require "../spec_helper"
 # Plan headline 5 (no separate probe file): `require "gemma"` ran
 # `Log.setup_from_env`, replacing the app's log backend and formatter.
 describe "log setup probe" do
-  it_reproduces_known_defect "leaves the app's log backend and formatter in place", fixed_in: "PR 3 (library hygiene)" do
-    result = SnippetCompiler.run <<-'CRYSTAL'
+  it "leaves the app's log backend and formatter in place and sends Gemma's entries to them" do
+    result = SnippetCompiler.run <<-CRYSTAL
       require "log"
 
       APP_LOG_OUTPUT = IO::Memory.new
@@ -16,10 +16,11 @@ describe "log setup probe" do
       require "gemma"
 
       Log.for("app").info { "after gemma" }
+      Gemma.warn("from gemma")
       print APP_LOG_OUTPUT.to_s
       CRYSTAL
 
     result.exit_code.should eq(0)
-    result.output.should contain("APP|app|after gemma")
+    result.output.should contain("APP|app|after gemma\nAPP|gemma|from gemma")
   end
 end

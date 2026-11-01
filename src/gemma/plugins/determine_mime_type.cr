@@ -66,20 +66,22 @@ class Gemma
         end
 
         private def extract_with_file(io : IO, options)
-          return nil if io.size.try &.zero? # file command returns "application/x-empty" for empty files
+          return if io.size.try &.zero? # file command returns "application/x-empty" for empty files
 
           stdout = IO::Memory.new
           stderr = IO::Memory.new
-          status = Process.run("file", args: ["--mime-type", "--brief", "-"], output: stdout, error: stderr, input: io)
-
-          if status.success?
-            io.rewind
-            stdout.to_s.strip
-          else
-            raise Error.new "file command failed: #{stderr}"
+          status = begin
+            Process.run("file", args: ["--mime-type", "--brief", "-"], output: stdout, error: stderr, input: io)
+          rescue error : File::NotFoundError
+            raise AnalyzerMissing.new("the file command-line tool is not installed", cause: error)
           end
-        rescue RuntimeError
-          raise Error.new("file command-line tool is not installed")
+
+          unless status.success?
+            raise AnalyzerFailed.new("file command failed: #{stderr}")
+          end
+
+          io.rewind
+          stdout.to_s.strip
         end
 
         private def extract_with_mime(io, options)
@@ -89,8 +91,10 @@ class Gemma
         end
 
         def extract_with_content_type(io, options)
-          if io.responds_to?(:content_type) && io.content_type
-            io.content_type.not_nil!.split(";").first
+          return unless io.responds_to?(:content_type)
+
+          if declared_content_type = io.content_type
+            declared_content_type.split(";").first
           end
         end
 

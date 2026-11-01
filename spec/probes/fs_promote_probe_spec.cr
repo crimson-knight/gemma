@@ -1,6 +1,6 @@
 require "../spec_helper"
 
-private AMBER_UPLOAD_SNIPPET = <<-'CRYSTAL'
+private AMBER_UPLOAD_SNIPPET = <<-CRYSTAL
   require "gemma"
 
   # The shape of Amber::Router::File: a tempfile named <random><original>
