@@ -11,9 +11,10 @@ module Gemma
         @store = {} of String => Bytes
       end
 
-      # Returns a copy of the stored files keyed by id.
+      # Returns a copy of the stored files keyed by id; each content is
+      # copied too, so changing it never changes the storage.
       def store : Hash(String, Bytes)
-        @mutex.synchronize { @store.dup }
+        @mutex.synchronize { @store.transform_values(&.dup) }
       end
 
       def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil

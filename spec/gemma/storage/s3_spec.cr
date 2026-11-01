@@ -191,6 +191,13 @@ describe Gemma::Storage::S3 do
       s3_storage(prefix: "prefix").url("foo.jpg").should start_with("#{S3_SPEC_HOST}/prefix/foo.jpg?")
     end
 
+    it "refuses an expiry S3 would reject: zero, negative, or over seven days" do
+      expect_raises(ArgumentError, /1 to 604800 seconds/) { s3_storage.url("foo.jpg", expires_in: 0) }
+      expect_raises(ArgumentError) { s3_storage.url("foo.jpg", expires_in: -5) }
+      expect_raises(ArgumentError) { s3_storage.url("foo.jpg", expires_in: 8.days) }
+      s3_storage.url("foo.jpg", expires_in: 7.days).should contain("X-Amz-Expires=604800")
+    end
+
     it "accepts expires_in as a Time::Span or seconds" do
       s3_storage.url("foo.jpg", expires_in: 1.hour).should contain("X-Amz-Expires=3600")
       s3_storage.url("foo.jpg", expires_in: 600).should contain("X-Amz-Expires=600")
