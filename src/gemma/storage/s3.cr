@@ -122,7 +122,8 @@ module Gemma
       end
 
       # Returns a presigned GET URL to the file. Pass `expires_in:` (a
-      # `Time::Span` or a number of seconds) to change the default of one day.
+      # `Time::Span`, or a number of seconds as an integer or float) to change
+      # the default of one day. Raises `ArgumentError` for any other value.
       def url(id : String, **options) : String
         client.presigned_url(bucket, object_key(id), expires_in: url_expiry(options[:expires_in]?))
       end
@@ -156,13 +157,22 @@ module Gemma
         headers[header_name] = value
       end
 
+      # The default applies only when `expires_in` is omitted. A
+      # `Time::Span`, an integer or a finite float number of seconds is
+      # used as given (the signer then checks S3's 1 second to 7 day range);
+      # anything else raises `ArgumentError` rather than silently signing a
+      # URL for a day.
       private def url_expiry(requested_expiry) : Time::Span
-        if requested_expiry.is_a?(Time::Span)
+        if requested_expiry.nil?
+          DEFAULT_URL_EXPIRY
+        elsif requested_expiry.is_a?(Time::Span)
           requested_expiry
         elsif requested_expiry.is_a?(Int)
           requested_expiry.seconds
+        elsif requested_expiry.is_a?(Float) && requested_expiry.finite?
+          requested_expiry.seconds
         else
-          DEFAULT_URL_EXPIRY
+          raise ArgumentError.new("expires_in must be a Time::Span or a number of seconds, got #{requested_expiry.inspect}")
         end
       end
     end

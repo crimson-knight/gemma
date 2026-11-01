@@ -198,6 +198,12 @@ describe Gemma::Storage::S3 do
       s3_storage.url("foo.jpg", expires_in: 7.days).should contain("X-Amz-Expires=604800")
     end
 
+    it "takes expires_in as Float seconds and refuses any other type" do
+      s3_storage.url("foo.jpg", expires_in: 60.0).should contain("X-Amz-Expires=60&")
+      expect_raises(ArgumentError, /expires_in/) { s3_storage.url("foo.jpg", expires_in: "60") }
+      expect_raises(ArgumentError, /expires_in/) { s3_storage.url("foo.jpg", expires_in: Float64::NAN) }
+    end
+
     it "accepts expires_in as a Time::Span or seconds" do
       s3_storage.url("foo.jpg", expires_in: 1.hour).should contain("X-Amz-Expires=3600")
       s3_storage.url("foo.jpg", expires_in: 600).should contain("X-Amz-Expires=600")
