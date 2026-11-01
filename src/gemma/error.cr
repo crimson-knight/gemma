@@ -18,6 +18,11 @@ class Gemma
   class NotCached < Error
   end
 
+  # Raised when a location (a file id) is malformed or would resolve outside
+  # its storage, such as `../../etc/hosts`.
+  class InvalidLocation < Error
+  end
+
   # Raised when a storage key has no storage registered in `Gemma.settings`.
   class StorageNotRegistered < Error
   end

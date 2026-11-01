@@ -5,6 +5,7 @@ require "./gemma/settings"
 require "./gemma/storage/*"
 require "./gemma/attacher"
 require "./gemma/uploaded_file"
+require "./gemma/cached_file_reference"
 
 class Gemma
   # Gemma's log source ("gemma"). Gemma never configures logging itself;
@@ -241,26 +242,41 @@ class Gemma
       self.class.find_storage(storage_key)
     end
 
-    # The main method for uploading files. Takes an IO-like object and an
-    # optional context hash (used internally by Gemma::Attacher). It calls
-    # user-defined #process, and afterwards it calls #store. The `io` is
-    # closed after upload.
+    # Uploads *io* (an `IO`, or an `UploadedFile` on another storage) to
+    # this uploader's storage and returns the stored file. Gemma never
+    # closes or deletes an IO it did not open: the caller still owns *io*
+    # afterwards.
     #
-    #   uploader.upload(io)
-    #   uploader.upload(io, metadata: { "foo" => "bar" })           # add metadata
-    #   uploader.upload(io, location: "path/to/file")               # specify location
-    #   uploader.upload(io, upload_options: { acl: "public-read" }) # add upload options
-    def upload(io : IO | UploadedFile, **options)
+    # ```
+    # uploader.upload(io)
+    # uploader.upload(io, metadata: {"foo" => "bar"}) # add metadata
+    # uploader.upload(io, location: "path/to/file")   # choose the location
+    # ```
+    def upload(io : IO | UploadedFile, **options) : UploadedFile
       metadata = get_metadata(io, **options)
       location = get_location(io, **options.merge(metadata: metadata))
 
-      _upload(io, **options.merge(location: location, metadata: metadata))
+      store_content(io, location, metadata)
 
       UploadedFile.new(
         id: location,
         storage_key: storage_key,
         metadata: metadata,
       )
+    end
+
+    # Returns the metadata of the file already stored at *id* on this
+    # uploader's storage, read from the stored bytes. *filename* is recorded
+    # as the original filename; nothing else is taken from the caller.
+    def extract_stored_metadata(id : String, filename : String? = nil) : UploadedFile::MetadataType
+      stored_io = storage.open(id)
+      begin
+        metadata = extract_metadata(stored_io)
+      ensure
+        stored_io.close
+      end
+      metadata["filename"] = filename
+      metadata
     end
 
     # Generates a unique location for the uploaded file, preserving the
@@ -285,20 +301,30 @@ class Gemma
       hash
     end
 
-    # private def _upload(io : IO, location, metadata, upload_options, close = true, delete = false)
-    private def _upload(io : IO | UploadedFile, location, metadata, close = true, delete = false, **options)
-      storage.upload(io, location, **options.merge(metadata: metadata))
-    ensure
-      io.close if close
-      File.delete(io.path) if delete && io.responds_to?(:path) && File.exists?(io.path)
+    # Streams *io* to the storage, leaving it open for the caller.
+    private def store_content(io : IO, location : String, metadata : UploadedFile::MetadataType) : Nil
+      storage.upload(io, location, metadata)
+    end
+
+    # Opens *source* on its own storage and streams it across.
+    private def store_content(source : UploadedFile, location : String, metadata : UploadedFile::MetadataType) : Nil
+      source_io = source.storage.open(source.id)
+      begin
+        storage.upload(source_io, location, metadata)
+      ensure
+        source_io.close
+      end
     end
 
     # Attempts to extract the appropriate filename from the IO object.
-    private def extract_filename(io)
+    private def extract_filename(io) : String?
       if io.responds_to?(:original_filename)
         io.original_filename
       elsif io.responds_to?(:path)
-        File.basename(io.path)
+        # Some IO types report a nilable path.
+        if file_path = io.path
+          File.basename(file_path.to_s)
+        end
       end
     end
 
@@ -355,9 +381,10 @@ class Gemma
       location
     end
 
-    # Generates a unique identifier that can be used for a location.
-    def generate_uid(io)
-      Random.new.hex
+    # Generates a unique identifier that can be used for a location: 32
+    # hex characters from the system's secure random source.
+    def generate_uid(io) : String
+      Random::Secure.hex(16)
     end
   end
 

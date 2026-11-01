@@ -2,59 +2,55 @@ require "./base"
 
 class Gemma
   module Storage
+    # Keeps files in a hash in memory, for specs and development. Access is
+    # synchronized, so fibers on several threads can share one instance.
     class Memory < Storage::Base
-      getter store
+      @mutex = Mutex.new
 
       def initialize
-        @store = {} of String => String
+        @store = {} of String => Bytes
       end
 
-      def upload(io : IO | UploadedFile, id : String, move = false, **options)
-        content = if io.is_a?(UploadedFile)
-                    io.storage.open(io.id).gets_to_end
-                  else
-                    io.gets_to_end
-                  end
-        store[id.to_s] = content
+      # Returns a copy of the stored files keyed by id.
+      def store : Hash(String, Bytes)
+        @mutex.synchronize { @store.dup }
+      end
+
+      def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
+        content = io.getb_to_end
+        @mutex.synchronize { @store[id] = content }
       end
 
       def open(id : String) : IO
-        # StringIO.new(store.fetch(id))
-        IO::Memory.new(store[id])
-      rescue error : KeyError
-        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage", cause: error)
-      end
+        content = @mutex.synchronize { @store[id]? }
+        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage") unless content
 
-      def open(id : String, **options) : IO
-        open(id)
+        IO::Memory.new(content, writable: false)
       end
 
       def exists?(id : String) : Bool
-        store.has_key?(id)
+        @mutex.synchronize { @store.has_key?(id) }
       end
 
       def url(id : String, **options) : String
-        "memory://#{path(id)}"
+        "memory://#{id}"
       end
 
-      def path(id : String) : String
-        id
+      def delete(id : String) : Nil
+        @mutex.synchronize { @store.delete(id) }
+        nil
       end
 
-      def delete(id : String)
-        store.delete(id)
+      # Deletes every file whose id starts with *delete_prefix* followed by
+      # `/`.
+      def delete_prefixed(delete_prefix : String) : Nil
+        directory_prefix = delete_prefix.chomp("/") + "/"
+        @mutex.synchronize { @store.reject! { |key, _value| key.starts_with?(directory_prefix) } }
+        nil
       end
 
-      def delete_prefixed(delete_prefix : String)
-        delete_prefix = delete_prefix.chomp("/") + "/"
-        store.delete_if { |key, _value| key.start_with?(delete_prefix) }
-      end
-
-      def clear!
-        store.clear
-      end
-
-      protected def clean(path)
+      def clear! : Nil
+        @mutex.synchronize { @store.clear }
       end
     end
   end

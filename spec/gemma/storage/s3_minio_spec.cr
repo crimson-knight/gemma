@@ -65,7 +65,7 @@ require "../../spec_helper"
         id = "nested dir/résumé photo.jpg"
 
         storage.exists?(id).should be_false
-        storage.upload(IO::Memory.new(content), id, metadata).should be_true
+        storage.upload(IO::Memory.new(content), id, metadata)
         storage.exists?(id).should be_true
 
         io = storage.open(id)
@@ -78,7 +78,7 @@ require "../../spec_helper"
         presigned.body.should eq(content)
         presigned.headers["Content-Disposition"].should eq(Gemma::ContentDisposition.inline("résumé photo.jpg"))
 
-        storage.delete(id).should be_true
+        storage.delete(id)
         storage.exists?(id).should be_false
         expect_raises(Gemma::FileNotFound) { storage.open(id) }
       end

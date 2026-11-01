@@ -1,25 +1,27 @@
 class Gemma
   module Storage
+    # The contract every storage implements. A storage only ever receives an
+    # `IO` to read from; the uploader opens an `UploadedFile` source and
+    # streams it, so no storage needs to know about other storages.
     abstract class Base
-      getter? clean : Bool = true
+      # Copies everything *io* has left into the location *id*. *metadata*
+      # describes the file (a storage may turn `filename` and `mime_type`
+      # into headers). The storage never closes *io*.
+      abstract def upload(io : IO, id : String, metadata : UploadedFile::MetadataType = UploadedFile::MetadataType.new) : Nil
 
-      # uploads `io` to the location `id`, can accept upload options
-      abstract def upload(io : IO | UploadedFile, id : String, move = false, **options)
+      # Returns the file at *id* opened for reading. The caller closes it.
+      # Raises `Gemma::FileNotFound` when there is no such file.
+      abstract def open(id : String) : IO
 
-      # returns the remote file as an IO-like object
-      abstract def open(id : String, **options) : IO
-
-      # returns URL to the remote file, can accept URL options
+      # Returns a URL to the file at *id*; storages document the options
+      # they accept.
       abstract def url(id : String, **options) : String
 
-      # returns whether the file exists on storage
+      # Returns whether a file exists at *id*.
       abstract def exists?(id : String) : Bool
 
-      # deletes the file from the storage
-      abstract def delete(id : String)
-
-      # cleans the path in the storage
-      abstract def clean(path : String)
+      # Deletes the file at *id*. Deleting a missing file is not an error.
+      abstract def delete(id : String) : Nil
     end
   end
 end

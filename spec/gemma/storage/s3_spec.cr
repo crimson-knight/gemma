@@ -35,32 +35,33 @@ describe Gemma::Storage::S3 do
     it "puts the object at the key" do
       WebMock.stub(:put, "#{S3_SPEC_HOST}/object").to_return(status: 200, body: "", headers: {"ETag" => "etag"})
 
-      s3_storage.upload(FakeIO.new("hello"), "object").should be_true
+      s3_storage.upload(FakeIO.new("hello"), "object")
     end
 
     it "puts the object under the prefix" do
       WebMock.stub(:put, "#{S3_SPEC_HOST}/prefix/a/a/a.jpg").to_return(status: 200, body: "")
 
-      s3_storage(prefix: "prefix").upload(FakeIO.new, "a/a/a.jpg").should be_true
+      s3_storage(prefix: "prefix").upload(FakeIO.new, "a/a/a.jpg")
     end
 
-    it "sends the body, the upload options and an RFC 6266 Content-Disposition, all signed" do
+    it "sends the body, the upload options, Content-Type and an RFC 6266 Content-Disposition, all signed" do
       sent_request = nil
       WebMock.stub(:put, "#{S3_SPEC_HOST}/a/a/a.jpg").to_return do |request|
         sent_request = request
         HTTP::Client::Response.new(200)
       end
 
-      s3_storage.upload(FakeIO.new("binary\u0000data"), "a/a/a.jpg", s3_metadata).should be_true
+      s3_storage.upload(FakeIO.new("binary\u0000data"), "a/a/a.jpg", s3_metadata)
 
       request = sent_request
       raise "the PUT never reached the stub" unless request
       WebMock.body(request).should eq("binary\u0000data")
       request.headers["Content-Disposition"].should eq(
         %(inline; filename="r%3Fsum%3F photo.jpg"; filename*=UTF-8''r%C3%A9sum%C3%A9%20photo.jpg))
+      request.headers["Content-Type"].should eq("image/jpeg")
       request.headers["x-amz-acl"].should eq("private")
       request.headers["X-Amz-Content-Sha256"].should eq(Digest::SHA256.hexdigest("binary\u0000data"))
-      request.headers["Authorization"].should contain("content-disposition;host;x-amz-acl;x-amz-content-sha256;x-amz-date")
+      request.headers["Authorization"].should contain("content-disposition;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date")
       request.headers.has_key?("metadata").should be_false
     end
 
@@ -76,6 +77,22 @@ describe Gemma::Storage::S3 do
       error.message.should eq(
         "S3 PUT /denied.jpg failed with HTTP 403: <Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>")
     end
+  end
+
+  it "sends the detected Content-Type even when the configuration names one" do
+    client = Gemma::Storage::S3::Client.new("us-east-2", "test_key", "test_secret")
+    storage = Gemma::Storage::S3.new(bucket: "test", client: client, upload_options: {"content-type" => "application/octet-stream"})
+    sent_request = nil
+    WebMock.stub(:put, "#{S3_SPEC_HOST}/a.jpg").to_return do |request|
+      sent_request = request
+      HTTP::Client::Response.new(200)
+    end
+
+    storage.upload(FakeIO.new("x"), "a.jpg", s3_metadata)
+
+    request = sent_request
+    raise "the PUT never reached the stub" unless request
+    request.headers.get("Content-Type").should eq(["image/jpeg"])
   end
 
   describe "#exists?" do
@@ -147,12 +164,17 @@ describe Gemma::Storage::S3 do
   describe "#delete" do
     it "deletes objects" do
       WebMock.stub(:delete, "#{S3_SPEC_HOST}/foo.jpg").to_return(status: 204)
-      s3_storage.delete("foo.jpg").should be_true
+      s3_storage.delete("foo.jpg").should be_nil
     end
 
     it "deletes objects under the prefix" do
       WebMock.stub(:delete, "#{S3_SPEC_HOST}/prefix/foo.jpg").to_return(status: 204)
-      s3_storage(prefix: "prefix").delete("foo.jpg").should be_true
+      s3_storage(prefix: "prefix").delete("foo.jpg").should be_nil
+    end
+
+    it "raises when the service refuses the delete" do
+      WebMock.stub(:delete, "#{S3_SPEC_HOST}/foo.jpg").to_return(status: 403)
+      expect_raises(Gemma::Storage::S3::ResponseError) { s3_storage.delete("foo.jpg") }
     end
   end
 end

@@ -66,7 +66,8 @@ class Gemma
         end
 
         private def extract_with_file(io : IO, options)
-          return if io.size.try &.zero? # file command returns "application/x-empty" for empty files
+          # The file command answers "application/x-empty" for an empty file.
+          return if io.responds_to?(:size) && io.size.zero?
 
           stdout = IO::Memory.new
           stderr = IO::Memory.new
@@ -102,7 +103,9 @@ class Gemma
           if io.responds_to?(:original_filename)
             io.original_filename
           elsif io.responds_to?(:path)
-            File.basename(io.path)
+            if file_path = io.path
+              File.basename(file_path.to_s)
+            end
           end
         end
       end
