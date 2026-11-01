@@ -72,7 +72,10 @@ module Gemma
         # Returns the response headers (`ETag` and friends).
         def put_object(bucket : String, key : String, body : Bytes, headers : Hash(String, String) = Hash(String, String).new) : HTTP::Headers
           request_headers = HTTP::Headers.new
-          headers.each { |header_name, value| request_headers[header_name] = value }
+          headers.each do |header_name, value|
+            ensure_header_name_is_a_token(header_name)
+            request_headers[header_name] = value
+          end
 
           perform("PUT", bucket, key, request_headers, body, Digest::SHA256.hexdigest(body)) do |response|
             response.headers
@@ -85,7 +88,10 @@ module Gemma
         # bytes it receives hash differently.
         def put_object(bucket : String, key : String, body : IO, size : Int64, payload_hash : String, headers : Hash(String, String) = Hash(String, String).new) : HTTP::Headers
           request_headers = HTTP::Headers.new
-          headers.each { |header_name, value| request_headers[header_name] = value }
+          headers.each do |header_name, value|
+            ensure_header_name_is_a_token(header_name)
+            request_headers[header_name] = value
+          end
           request_headers["Content-Length"] = size.to_s
 
           perform("PUT", bucket, key, request_headers, body, payload_hash) do |response|
@@ -209,6 +215,17 @@ module Gemma
             end
           ensure
             http_client.close
+          end
+        end
+
+        # RFC 9110 token characters. `HTTP::Headers` checks values, not names,
+        # so a configured name holding CR or LF would add header lines on the
+        # wire.
+        HEADER_NAME_TOKEN = /\A[!#$%&'*+\-.^_`|~0-9A-Za-z]+\z/
+
+        private def ensure_header_name_is_a_token(header_name : String) : Nil
+          unless header_name.matches?(HEADER_NAME_TOKEN)
+            raise ArgumentError.new("invalid HTTP header name #{header_name.inspect}")
           end
         end
 

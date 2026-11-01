@@ -3,6 +3,19 @@ require "../grant_helper"
 # The shape of `Amber::Router::File`.
 private record LifecyclePart, file : File, filename : String?, headers : HTTP::Headers
 
+# A Memory storage, seeded from *source*, whose delete of one id raises.
+private class FailingDeleteMemoryStorage < Gemma::Storage::Memory
+  def initialize(source : Gemma::Storage::Memory, @failing_id : String)
+    super()
+    source.store.each { |id, content| upload(IO::Memory.new(content), id) }
+  end
+
+  def delete(id : String) : Nil
+    raise IO::Error.new("delete refused for #{id}") if id == @failing_id
+    super
+  end
+end
+
 private def stored_ids : Array(String)
   memory_storage("store").store.keys.sort!
 end
@@ -340,6 +353,21 @@ describe "Gemma::Grant attachment lifecycle on a real Grant model" do
     listing.documents.should eq(before)
     listing.documents_changed?.should be_false
     memory_storage("cache").store.should be_empty
+  end
+
+  it "records the committed column and runs every delete when one delete after commit fails" do
+    listing = saved_listing
+    first_document, second_document = listing.documents
+    listing.documents = [IO::Memory.new("three")]
+    failing_store = FailingDeleteMemoryStorage.new(memory_storage("store"), first_document.id)
+    Gemma.configure { |config| config.storages["store"] = failing_store }
+
+    listing.save.should be_true
+
+    failing_store.store.has_key?(first_document.id).should be_true
+    failing_store.store.has_key?(second_document.id).should be_false
+    listing.title = "saved again"
+    listing.save.should be_true
   end
 
   it "keeps a referenced cached file when a later replacement fails" do

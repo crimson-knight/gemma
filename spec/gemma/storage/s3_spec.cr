@@ -83,6 +83,18 @@ describe Gemma::Storage::S3 do
       sent_body.to_s.to_slice.should eq(bytes)
     end
 
+    it "refuses a configured header name that is not an HTTP token" do
+      storage = Gemma::Storage::S3.new(
+        bucket: "test",
+        client: Gemma::Storage::S3::Client.new("us-east-2", "test_key", "test_secret"),
+        upload_options: {"x-evil\r\nInjected" => "1"}
+      )
+
+      expect_raises(ArgumentError, /invalid HTTP header name/) do
+        storage.upload(FakeIO.new("hello"), "object")
+      end
+    end
+
     it "sends nothing when reading the upload fails" do
       put_count = 0
       WebMock.stub(:put, "#{S3_SPEC_HOST}/partial.bin").to_return do |_request|
@@ -186,14 +198,16 @@ describe Gemma::Storage::S3 do
   end
 
   describe "#open" do
-    it "returns an IO holding the whole object, rewound to position 0" do
+    it "returns the whole object spooled to an unlinked file, rewound to position 0" do
       WebMock.stub(:get, "#{S3_SPEC_HOST}/foo.jpg").to_return(body_io: IO::Memory.new("object bytes"))
 
       io = s3_storage.open("foo.jpg")
 
-      io.should be_a(IO::Memory)
+      raise "expected a File" unless io.is_a?(File)
+      File.exists?(io.path).should be_false
       io.pos.should eq(0)
       io.gets_to_end.should eq("object bytes")
+      io.close
     end
 
     it "reads the object under the prefix" do

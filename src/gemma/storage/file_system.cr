@@ -32,10 +32,16 @@ module Gemma
       #   (default `0755`).
       # - *clean*: delete directories that `#delete` leaves empty (default
       #   true). Turn it off if that causes too much filesystem load.
+      #
+      # Raises `ArgumentError` when *prefix* is not a plain relative path
+      # (it holds `..`, a NUL byte, or is absolute after its leading `/`)
+      # or when it resolves, through a symlink, outside *directory*.
       def initialize(@directory : String, @prefix : String? = nil, @clean : Bool = true, @permissions : Int32 = DEFAULT_PERMISSIONS, @directory_permissions : Int32 = DEFAULT_DIRECTORY_PERMISSIONS)
+        ensure_prefix_is_plain
         unless Dir.exists?(expanded_directory)
           Dir.mkdir_p(expanded_directory, mode: directory_permissions)
         end
+        ensure_prefix_stays_inside_directory
       end
 
       # The absolute directory files are stored in: *directory* plus
@@ -155,6 +161,26 @@ module Gemma
         file_path = path(id)
         Dir.mkdir_p(Path[file_path].dirname, mode: directory_permissions)
         file_path
+      end
+
+      private def ensure_prefix_is_plain : Nil
+        subdirectory = relative_prefix
+        return unless subdirectory
+
+        segments = Path[subdirectory].parts
+        if subdirectory.includes?('\0') || Path[subdirectory].absolute? || segments.includes?("..")
+          raise ArgumentError.new("FileSystem prefix #{prefix.inspect} must be a relative path without `..`")
+        end
+      end
+
+      private def ensure_prefix_stays_inside_directory : Nil
+        return unless relative_prefix
+
+        real_directory = Path[File.realpath(File.expand_path(directory))]
+        real_root = Path[File.realpath(expanded_directory)]
+        unless real_root == real_directory || real_root.parents.includes?(real_directory)
+          raise ArgumentError.new("FileSystem prefix #{prefix.inspect} resolves outside #{directory.inspect} through a symlink")
+        end
       end
 
       private def relative_prefix : String?

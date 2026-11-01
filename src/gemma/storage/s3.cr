@@ -91,19 +91,31 @@ module Gemma
         nil
       end
 
-      # Returns an IO holding the whole object, rewound to position 0. The
-      # HTTP connection is already closed, so the IO stays readable.
+      # Returns the whole object as a file opened for reading at position 0.
+      # The object is spooled to an unlinked temporary file, so memory use
+      # stays flat whatever its size and the bytes vanish when the caller
+      # closes the IO. The HTTP connection is already closed.
       # Raises `Gemma::FileNotFound` when the object does not exist.
       def open(id : String) : IO
-        io = IO::Memory.new
-        client.get_object(bucket, object_key(id)) do |response|
-          if body_io = response.body_io?
-            IO.copy(body_io, io)
-          else
-            io << response.body
+        spool = File.tempfile("gemma-s3-download")
+        begin
+          client.get_object(bucket, object_key(id)) do |response|
+            if body_io = response.body_io?
+              IO.copy(body_io, spool)
+            else
+              spool << response.body
+            end
           end
+          spool.flush
+          spool.rewind
+          spool
+        rescue error
+          spool.close
+          raise error
+        ensure
+          # Unlinked now; the open descriptor keeps the bytes readable.
+          spool.delete
         end
-        io.rewind
       rescue error : ResponseError
         raise error unless error.status_code == 404
         raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage: #{error.message}", cause: error)

@@ -76,8 +76,8 @@ module Gemma
           end
         rescue error
           promotions.each do |attacher, cached, promoted|
-            promoted.delete
             attacher.set(cached) if attacher.file == promoted
+            delete_after_failure(promoted)
           end
           raise error
         end
@@ -95,8 +95,8 @@ module Gemma
         unless entry.undone?
           entry.undone = true
           entry.list_of_promotions.each do |attacher, cached, promoted|
-            promoted.delete
             attacher.set(cached) if attacher.file == promoted
+            delete_after_failure(promoted)
           end
           @changed = true unless entry.list_of_promotions.empty?
         end
@@ -112,11 +112,14 @@ module Gemma
         return if live.empty?
 
         final = live.last.written
-        kept = files_of(final)
-        doomed = files_of(committed) + live.flat_map(&.promoted_files)
-        doomed.uniq.each { |stored| stored.delete unless kept.includes?(stored) }
-        live.flat_map(&.cached_files).uniq!.each(&.delete)
+        previous = committed
+        # The row already holds *final*; record that before any delete, so a
+        # failed delete never leaves the record expecting the old column.
         @committed = final
+        kept = files_of(final)
+        doomed = files_of(previous) + live.flat_map(&.promoted_files)
+        doomed.uniq.each { |stored| delete_after_commit(stored) unless kept.includes?(stored) }
+        live.flat_map(&.cached_files).uniq!.each { |cached| delete_after_commit(cached) }
       end
 
       # After the record's destroy commits: deletes every stored file the
@@ -126,8 +129,26 @@ module Gemma
         live = @ledger.reject(&.undone?)
         @ledger.clear
         stored = files_of(committed) + live.flat_map(&.promoted_files) + files_of(current_value).reject { |file| cached?(file) }
-        stored.uniq.each(&.delete)
-        live.flat_map(&.cached_files).uniq!.each(&.delete)
+        stored.uniq.each { |file| delete_after_commit(file) }
+        live.flat_map(&.cached_files).uniq!.each { |cached| delete_after_commit(cached) }
+      end
+
+      # Deletes *file* once the database has committed. A failure is logged
+      # and the remaining deletes still run: the row is already final, so
+      # the leftover file is orphaned storage, not a wrong record.
+      private def delete_after_commit(file : Gemma::UploadedFile) : Nil
+        file.delete
+      rescue error
+        Gemma::Log.warn(exception: error) { "could not delete #{file.storage_key}:#{file.id} after commit; it is orphaned" }
+      end
+
+      # Deletes *file* while undoing a failed save. A failure is logged so
+      # the save's own error reaches the caller, and the remaining copies
+      # are still deleted.
+      private def delete_after_failure(file : Gemma::UploadedFile) : Nil
+        file.delete
+      rescue error
+        Gemma::Log.warn(exception: error) { "could not delete #{file.storage_key}:#{file.id} after a failed save; it is orphaned" }
       end
 
       abstract def files_of(value : T) : Array(Gemma::UploadedFile)
