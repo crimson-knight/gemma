@@ -342,6 +342,34 @@ describe "Gemma::Grant attachment lifecycle on a real Grant model" do
     memory_storage("cache").store.should be_empty
   end
 
+  it "keeps a referenced cached file when a later replacement fails" do
+    listing = saved_listing
+    referenced = Gemma.upload(IO::Memory.new("kept"), "cache")
+
+    expect_raises(Gemma::InvalidLocation) do
+      listing.documents = [
+        Gemma::CachedFileReference.new(referenced.id, "cache"),
+        IO::Memory.new("new"),
+        Gemma::CachedFileReference.new("../x", "cache"),
+      ]
+    end
+
+    memory_storage("cache").store.keys.should eq([referenced.id])
+  end
+
+  it "deletes what a save already promoted when a later promotion in the list fails" do
+    listing = IntegrationListing.new(title: "promotion fails")
+    listing.documents = [IO::Memory.new("one"), IO::Memory.new("two")]
+    second_cached = listing.documents.last
+    memory_storage("cache").delete(second_cached.id)
+
+    expect_raises(Gemma::FileNotFound) do
+      listing.save
+    end
+
+    stored_ids.should be_empty
+  end
+
   describe "the 0.6 validator names" do
     it "still compile, with a deprecation warning naming the replacement" do
       result = SnippetCompiler.check <<-CRYSTAL

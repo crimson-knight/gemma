@@ -62,11 +62,24 @@ module Gemma
 
       # Promotes every cached file and records the save. Returns the entry,
       # whose undo the caller registers with the transaction.
+      #
+      # If one promotion fails, the files this call already promoted are
+      # deleted and their attachers point back at the cached copies before
+      # the error propagates, so a failed save leaves no stored file behind.
       def prepare_save(column_before : T) : SaveEntry(T)
-        promotions = cached_attachers.compact_map do |attacher|
-          cached = attacher.file
-          promoted = attacher.promote
-          {attacher, cached, promoted} if cached && promoted
+        promotions = [] of {Gemma::Attacher, Gemma::UploadedFile, Gemma::UploadedFile}
+        begin
+          cached_attachers.each do |attacher|
+            cached = attacher.file
+            promoted = attacher.promote
+            promotions << {attacher, cached, promoted} if cached && promoted
+          end
+        rescue error
+          promotions.each do |attacher, cached, promoted|
+            promoted.delete
+            attacher.set(cached) if attacher.file == promoted
+          end
+          raise error
         end
         entry = SaveEntry(T).new(current_value, column_before, promotions)
         @ledger << entry
@@ -194,13 +207,23 @@ module Gemma
       end
 
       # Replaces the whole list. Every value is cached first; if one fails,
-      # the list is unchanged and the files cached for it are deleted.
+      # the list is unchanged and the files this call cached are deleted. A
+      # value that names an existing cached file (a `CachedFileReference`,
+      # an `UploadedFile`, or their JSON) created nothing, so its file is kept.
       def replace(values : Array) : Nil
         replacements = [] of Gemma::Attacher
+        list_of_files_cached_here = [] of Gemma::UploadedFile
         begin
-          values.each { |value| replacements << build(value) }
+          values.each do |value|
+            attacher = build(value)
+            replacements << attacher
+            cached_file = attacher.file
+            if cached_file && !names_an_existing_cached_file?(value)
+              list_of_files_cached_here << cached_file
+            end
+          end
         rescue error
-          replacements.each(&.file.try(&.delete))
+          list_of_files_cached_here.each(&.delete)
           raise error
         end
         @list_of_attachers = replacements
@@ -238,6 +261,12 @@ module Gemma
 
       def cached?(file : Gemma::UploadedFile) : Bool
         list_of_attachers.any? { |attacher| attacher.file == file && attacher.cached? }
+      end
+
+      # Whether *value* points at a file the cache already holds, rather than
+      # bringing new bytes that `build` caches.
+      private def names_an_existing_cached_file?(value) : Bool
+        value.is_a?(Gemma::CachedFileReference) || value.is_a?(Gemma::UploadedFile) || value.is_a?(String) || value.is_a?(Hash)
       end
 
       private def build(value) : Gemma::Attacher

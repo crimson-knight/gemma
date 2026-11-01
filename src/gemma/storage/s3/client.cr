@@ -74,7 +74,21 @@ module Gemma
           request_headers = HTTP::Headers.new
           headers.each { |header_name, value| request_headers[header_name] = value }
 
-          perform("PUT", bucket, key, request_headers, body) do |response|
+          perform("PUT", bucket, key, request_headers, body, Digest::SHA256.hexdigest(body)) do |response|
+            response.headers
+          end
+        end
+
+        # Uploads *size* bytes read from *body* as the object *key*, without
+        # holding them in memory. *payload_hash* is the lowercase hex SHA-256
+        # of those bytes, which SigV4 signs; S3 rejects the PUT when the
+        # bytes it receives hash differently.
+        def put_object(bucket : String, key : String, body : IO, size : Int64, payload_hash : String, headers : Hash(String, String) = Hash(String, String).new) : HTTP::Headers
+          request_headers = HTTP::Headers.new
+          headers.each { |header_name, value| request_headers[header_name] = value }
+          request_headers["Content-Length"] = size.to_s
+
+          perform("PUT", bucket, key, request_headers, body, payload_hash) do |response|
             response.headers
           end
         end
@@ -131,8 +145,20 @@ module Gemma
           body : Bytes?,
           signed_at : Time = Time.utc,
         ) : {HTTP::Request, SignatureV4::Signature}
-          target = request_target(bucket, key)
           payload_hash = body ? Digest::SHA256.hexdigest(body) : SignatureV4::EMPTY_PAYLOAD_HASH
+          sign_payload(http_method, bucket, key, headers, body, payload_hash, signed_at)
+        end
+
+        private def sign_payload(
+          http_method : String,
+          bucket : String,
+          key : String,
+          headers : HTTP::Headers,
+          body : Bytes | IO?,
+          payload_hash : String,
+          signed_at : Time = Time.utc,
+        ) : {HTTP::Request, SignatureV4::Signature}
+          target = request_target(bucket, key)
           headers["Host"] = target.host_header
           headers["X-Amz-Date"] = SignatureV4.long_date(signed_at)
           headers["X-Amz-Content-Sha256"] = payload_hash
@@ -163,10 +189,11 @@ module Gemma
           bucket : String,
           key : String,
           headers : HTTP::Headers,
-          body : Bytes?,
+          body : Bytes | IO?,
+          payload_hash : String = SignatureV4::EMPTY_PAYLOAD_HASH,
           & : HTTP::Client::Response -> T
         ) : T forall T
-          request, _signature = sign_request(http_method, bucket, key, headers, body)
+          request, _signature = sign_payload(http_method, bucket, key, headers, body, payload_hash)
           connect_host = request_target(bucket, key).connect_host
 
           http_client = HTTP::Client.new(connect_host, @endpoint.port, tls: @endpoint.scheme == "https")

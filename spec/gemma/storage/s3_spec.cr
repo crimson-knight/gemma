@@ -42,8 +42,10 @@ describe Gemma::Storage::S3 do
 
     it "sends the body, the upload options, Content-Type and an RFC 6266 Content-Disposition, all signed" do
       sent_request = nil
+      sent_body = nil
       WebMock.stub(:put, "#{S3_SPEC_HOST}/a/a/a.jpg").to_return do |request|
         sent_request = request
+        sent_body = WebMock.body(request).to_s
         HTTP::Client::Response.new(200)
       end
 
@@ -51,14 +53,49 @@ describe Gemma::Storage::S3 do
 
       request = sent_request
       raise "the PUT never reached the stub" unless request
-      WebMock.body(request).should eq("binary\u0000data")
+      sent_body.should eq("binary\u0000data")
       request.headers["Content-Disposition"].should eq(
         %(inline; filename="r%3Fsum%3F photo.jpg"; filename*=UTF-8''r%C3%A9sum%C3%A9%20photo.jpg))
       request.headers["Content-Type"].should eq("image/jpeg")
       request.headers["x-amz-acl"].should eq("private")
       request.headers["X-Amz-Content-Sha256"].should eq(Digest::SHA256.hexdigest("binary\u0000data"))
-      request.headers["Authorization"].should contain("content-disposition;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date")
+      request.headers["Authorization"].should contain("content-disposition;content-length;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date")
       request.headers.has_key?("metadata").should be_false
+    end
+
+    it "streams the body with its Content-Length instead of chunked encoding" do
+      sent_request = nil
+      sent_body = nil
+      WebMock.stub(:put, "#{S3_SPEC_HOST}/big.bin").to_return do |request|
+        sent_request = request
+        sent_body = WebMock.body(request).to_s
+        HTTP::Client::Response.new(200)
+      end
+      bytes = Bytes.new(300_000) { |index| (index % 251).to_u8 }
+
+      s3_storage.upload(IO::Memory.new(bytes), "big.bin")
+
+      request = sent_request
+      raise "the PUT never reached the stub" unless request
+      request.headers["Content-Length"].should eq("300000")
+      request.headers.has_key?("Transfer-Encoding").should be_false
+      request.headers["X-Amz-Content-Sha256"].should eq(Digest::SHA256.hexdigest(bytes))
+      sent_body.to_s.to_slice.should eq(bytes)
+    end
+
+    it "sends nothing when reading the upload fails" do
+      put_count = 0
+      WebMock.stub(:put, "#{S3_SPEC_HOST}/partial.bin").to_return do |_request|
+        put_count += 1
+        HTTP::Client::Response.new(200)
+      end
+      too_large = Gemma::SizeLimitedIO.new(IO::Memory.new("x" * 100), 10_i64)
+
+      expect_raises(Gemma::FileTooLarge) do
+        s3_storage.upload(too_large, "partial.bin")
+      end
+
+      put_count.should eq(0)
     end
 
     it "sends an SVG as an attachment, so a browser never runs its script inline" do

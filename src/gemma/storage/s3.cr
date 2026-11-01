@@ -1,3 +1,5 @@
+require "digest/io_digest"
+require "digest/sha256"
 require "./base"
 require "../content_disposition"
 require "./s3/*"
@@ -56,8 +58,11 @@ module Gemma
       # Files a browser would run (`Analyzers::ACTIVE_CONTENT_TYPES`, such as SVG) get
       # `Content-Disposition: attachment` whatever their filename.
       #
-      # The body is buffered in memory before the PUT because SigV4 signs a
-      # hash of the payload.
+      # SigV4 signs a hash of the payload, so the body is first spooled to a
+      # temporary file while it is hashed, then streamed from that file. The
+      # PUT starts only after *io* is fully read, so an upload that fails
+      # while reading (`Gemma::FileTooLarge`, say) writes nothing, and memory
+      # use stays flat whatever the file's size.
       def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
         headers = @upload_options.dup
         headers["x-amz-acl"] = "public-read" if public?
@@ -71,9 +76,18 @@ module Gemma
         end
         set_header(headers, "Content-Type", mime_type) if mime_type
 
-        body = IO::Memory.new
-        IO.copy(io, body)
-        client.put_object(bucket, object_key(id), body.to_slice, headers)
+        spool = File.tempfile("gemma-s3-upload")
+        begin
+          digest = Digest::SHA256.new
+          hashing_writer = IO::Digest.new(spool, digest, mode: IO::Digest::DigestMode::Write)
+          size = IO.copy(io, hashing_writer).to_i64
+          spool.flush
+          spool.rewind
+          client.put_object(bucket, object_key(id), spool, size, digest.final.hexstring, headers)
+        ensure
+          spool.close
+          spool.delete
+        end
         nil
       end
 
