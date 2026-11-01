@@ -76,7 +76,7 @@ class Gemma
           {{attacher_name}}.destroy_attached
         end
       end
-      
+
       macro has_many_attached(name, uploader = Gemma)
         {% column = "#{name.id}_data".id %}
         {% singular = name.id.underscore.gsub(/s$/, "").id %}

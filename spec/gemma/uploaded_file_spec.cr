@@ -1,171 +1,92 @@
 require "../spec_helper"
 
-Spectator.describe Gemma::UploadedFile do
-  include GemmaHelpers
-  include FileHelpers
-
-  subject(uploaded_file) {
-    Gemma::UploadedFile.new(id, "cache", metadata)
+private def cached_file(id : String = "foo", filename : String? = nil, mime_type : String? = nil, size : Int32 | String | Nil = nil) : Gemma::UploadedFile
+  metadata = Gemma::UploadedFile::MetadataType{
+    "filename"  => filename,
+    "mime_type" => mime_type,
+    "size"      => size,
   }
+  Gemma::UploadedFile.new(id, "cache", metadata)
+end
 
-  let(id) { "foo" }
-
-  let(metadata) {
-    Gemma::UploadedFile::MetadataType{
-      "filename"  => filename,
-      "mime_type" => mime_type,
-      "size"      => size,
-    }
-  }
-
-  let(filename) { nil }
-  let(mime_type) { nil }
-  let(size) { nil }
-
-  after_each do
-    clear_storages
-  end
+describe Gemma::UploadedFile do
+  after_each { reset_storages }
 
   describe "#initialize" do
     it "initializes metadata if absent" do
-      metadata = subject.metadata
-
-      expect(
-        metadata
-      ).to be_a(Gemma::UploadedFile::MetadataType)
+      Gemma::UploadedFile.new("foo", "cache").metadata.should be_a(Gemma::UploadedFile::MetadataType)
     end
   end
 
   describe "#original_filename" do
-    context "without filename in `metadata`" do
-      it "returns nil" do
-        expect(uploaded_file.original_filename).to be_nil
-      end
+    it "returns nil without a filename in metadata" do
+      cached_file.original_filename.should be_nil
     end
 
-    context "with filename in `metadata`" do
-      let(filename) { "foo.jpg" }
-
-      it "returns filename from metadata" do
-        expect(uploaded_file.original_filename).to eq(filename)
-      end
-    end
-
-    context "with blank filename in `metadata`" do
-      let(filename) { nil }
-
-      it "returns nil" do
-        expect(uploaded_file.original_filename).to be_nil
-      end
+    it "returns the filename from metadata" do
+      cached_file(filename: "foo.jpg").original_filename.should eq("foo.jpg")
     end
   end
 
   describe "#extension" do
-    subject { uploaded_file.extension }
-
-    context "with extension in `id`" do
-      let(id) { "foo.jpg" }
-      it { is_expected.to eq("jpg") }
+    it "reads the extension from the id" do
+      cached_file(id: "foo.jpg").extension.should eq("jpg")
     end
 
-    context "without extension in `id`" do
-      let(id) { "foo" }
-      it { is_expected.to be_nil }
+    it "is nil when the id has no extension" do
+      cached_file(id: "foo").extension.should be_nil
     end
 
-    context "with filename and extension in `metadata`" do
-      let(filename) { "foo.jpg" }
-      it { is_expected.to eq("jpg") }
+    it "reads the extension from the filename in metadata" do
+      cached_file(filename: "foo.jpg").extension.should eq("jpg")
     end
 
-    context "with filename in `metadata`" do
-      let(filename) { "foo" }
-      it { is_expected.to be_nil }
+    it "is nil when the filename in metadata has no extension" do
+      cached_file(filename: "foo").extension.should be_nil
     end
 
-    context "without filename in `metadata`" do
-      it { is_expected.to be_nil }
+    it "is nil without a filename in metadata" do
+      cached_file.extension.should be_nil
     end
 
-    context "with extension in `id` and in `metadata`" do
-      let(id) { "foo.jpg" }
-      let(filename) { "foo.png" }
-
-      it "prefers extension from id over one from filename" do
-        expect(uploaded_file.extension).to eq("jpg")
-      end
+    it "prefers the extension from the id over the one from the filename" do
+      cached_file(id: "foo.jpg", filename: "foo.png").extension.should eq("jpg")
     end
 
-    context "with UPCASED extension in `id`" do
-      let(id) { "foo.JPG" }
-
-      it "downcases the extracted extension" do
-        expect(uploaded_file.extension).to eq("jpg")
-      end
+    it "downcases an uppercase extension in the id" do
+      cached_file(id: "foo.JPG").extension.should eq("jpg")
     end
 
-    context "with UPCASED extension in `filename`" do
-      let(filename) { "foo.PNG" }
-
-      it "downcases the extracted extension" do
-        expect(uploaded_file.extension).to eq("png")
-      end
+    it "downcases an uppercase extension in the filename" do
+      cached_file(filename: "foo.PNG").extension.should eq("png")
     end
   end
 
   describe "#size" do
-    context "without size in `metadata`" do
-      it "returns nil" do
-        expect(uploaded_file.size).to be_nil
-      end
+    it "returns nil without a size in metadata" do
+      cached_file.size.should be_nil
     end
 
-    context "with size in `metadata`" do
-      let(size) { 50 }
-
-      it "returns size from metadata" do
-        expect(uploaded_file.size).to eq(size)
-      end
+    it "returns the size from metadata" do
+      cached_file(size: 50).size.should eq(50)
     end
 
-    context "with blank size in `metadata`" do
-      it "returns nil" do
-        expect(uploaded_file.size).to be_nil
-      end
-    end
-
-    context "with size as String in `metadata`" do
-      let(size) { "50" }
-
-      it "converts the value to integer" do
-        expect(uploaded_file.size).to eq(size.to_i)
-      end
+    it "converts a String size to an integer" do
+      cached_file(size: "50").size.should eq(50)
     end
   end
 
   describe "#mime_type" do
-    context "with mime_type in `metadata`" do
-      let(mime_type) { "image/jpeg" }
-
-      it "returns mime_type from metadata" do
-        expect(uploaded_file.mime_type).to eq(mime_type)
-      end
-
-      it "has #content_type alias" do
-        expect(uploaded_file.content_type).to eq(mime_type)
-      end
+    it "returns the mime_type from metadata" do
+      cached_file(mime_type: "image/jpeg").mime_type.should eq("image/jpeg")
     end
 
-    context "with blank mime_type in `metadata`" do
-      it "returns nil as a mime_type" do
-        expect(uploaded_file.mime_type).to be_nil
-      end
+    it "has a #content_type alias" do
+      cached_file(mime_type: "image/jpeg").content_type.should eq("image/jpeg")
     end
 
-    context "without mime_type in `metadata`" do
-      it "returns nil as a mime_type" do
-        expect(uploaded_file.mime_type).to be_nil
-      end
+    it "returns nil without a mime_type in metadata" do
+      cached_file.mime_type.should be_nil
     end
   end
 
@@ -175,171 +96,155 @@ Spectator.describe Gemma::UploadedFile do
       io = uploaded_file.io
       uploaded_file.close
 
-      expect(io.closed?).to be_true
+      io.closed?.should be_true
     end
   end
 
   describe "#url" do
-    it "delegates to underlying storage" do
-      expect(uploaded_file.url).to eq("memory://foo")
+    it "delegates to the storage" do
+      cached_file.url.should eq("memory://foo")
     end
   end
 
   describe "#exists?" do
-    it "delegates to underlying storage" do
-      uploaded_file = uploader.upload(fakeio)
-      expect(uploaded_file.exists?).to be_true
-
-      expect(subject.exists?).to be_false
+    it "delegates to the storage" do
+      uploader.upload(fakeio).exists?.should be_true
+      cached_file.exists?.should be_false
     end
   end
 
   describe "#open" do
-    it "returns the underlying IO if no block given" do
+    it "returns the underlying IO if no block is given" do
       uploaded_file = uploader.upload(fakeio)
 
-      expect(uploaded_file.open).to be_an(IO)
-      expect(uploaded_file.open.closed?).to be_false
+      uploaded_file.open.should be_a(IO)
+      uploaded_file.open.closed?.should be_false
     end
 
-    it "closes the previuos IO" do
+    it "closes the previous IO" do
       uploaded_file = uploader.upload(fakeio)
       io1 = uploaded_file.open
       io2 = uploaded_file.open
 
-      expect(io1).not_to eq(io2)
-      expect(io1.closed?).to be_true
-      expect(io2.closed?).to be_false
+      io1.should_not be(io2)
+      io1.closed?.should be_true
+      io2.closed?.should be_false
     end
 
-    it "yields to the block if it's given" do
+    it "yields to the block if one is given" do
       uploaded_file = uploader.upload(fakeio)
 
       called = false
       uploaded_file.open { called = true }
-      expect(called).to be_true
+      called.should be_true
     end
 
     it "yields the opened IO" do
       uploaded_file = uploader.upload(fakeio("file"))
       uploaded_file.open do |io|
-        io = io.not_nil!
-
-        expect(io).to be_an(IO)
-        expect(io.gets_to_end).to eq("file")
+        io.should be_a(IO)
+        io.gets_to_end.should eq("file")
       end
     end
 
     it "makes itself open as well" do
       uploaded_file = uploader.upload(fakeio)
       uploaded_file.open do |io|
-        expect(io).to eq(uploaded_file.io)
+        io.should be(uploaded_file.io)
       end
     end
 
-    it "closes the IO after block finishes" do
+    it "closes the IO after the block finishes" do
       uploaded_file = uploader.upload(fakeio)
 
-      dup = IO::Memory.new
-      uploaded_file.open { |io| dup = io.not_nil! }
-      expect { dup.gets_to_end }.to raise_error(IO::Error)
+      yielded_io = IO::Memory.new
+      uploaded_file.open { |io| yielded_io = io }
+      expect_raises(IO::Error) { yielded_io.gets_to_end }
     end
 
-    it "resets the uploaded file ready to be opened again" do
+    it "can be read again after the block" do
       uploaded_file = uploader.upload(fakeio("file"))
       uploaded_file.open { }
 
-      expect(uploaded_file.gets_to_end).to eq("file")
+      uploaded_file.gets_to_end.should eq("file")
     end
 
     it "opens even if it was closed" do
       uploaded_file = uploader.upload(fakeio("file"))
       uploaded_file.gets_to_end
       uploaded_file.close
-      uploaded_file.open { |io|
-        expect(io.not_nil!.gets_to_end).to eq("file")
-      }
+      uploaded_file.open do |io|
+        io.gets_to_end.should eq("file")
+      end
     end
 
-    it "closes the file even if error has occured" do
+    it "closes the file even if an error occurred" do
       uploaded_file = uploader.upload(fakeio)
-      dup = IO::Memory.new
+      yielded_io = IO::Memory.new
 
-      expect {
+      expect_raises(Exception, "error occurred") do
         uploaded_file.open do |io|
-          dup = io.not_nil!
-          raise "error ocurred"
+          yielded_io = io
+          raise "error occurred"
         end
-      }.to raise_error(Exception)
+      end
 
-      expect(dup.closed?).to be_true
+      yielded_io.closed?.should be_true
     end
   end
 
   describe "#download" do
     it "downloads file content to a Tempfile" do
-      uploaded_file = uploader.upload(fakeio("file"))
-      downloaded = uploaded_file.download
+      downloaded = uploader.upload(fakeio("file")).download
 
-      expect(downloaded).to be_a(File)
-      expect(downloaded.closed?).to be_false
-      expect(downloaded.gets_to_end).to eq("file")
+      downloaded.should be_a(File)
+      downloaded.closed?.should be_false
+      downloaded.gets_to_end.should eq("file")
     end
 
-    it "applies extension from #id" do
+    it "applies the extension from #id" do
       uploaded_file = uploader.upload(fakeio, location: "foo.jpg")
 
-      expect(
-        uploaded_file.download.path
-      ).to match(/\.jpg$/)
+      uploaded_file.download.path.should end_with(".jpg")
     end
 
-    it "applies extension from #original_filename" do
+    it "applies the extension from #original_filename" do
       uploaded_file = uploader.upload(fakeio(filename: "foo.jpg"), location: "foo")
 
-      expect(
-        uploaded_file.download.path
-      ).to match(/\.jpg$/)
+      uploaded_file.download.path.should end_with(".jpg")
     end
 
-    it "yields the tempfile if block is given" do
-      uploaded_file = uploader.upload(fakeio)
-
-      uploaded_file.download do |tempfile|
-        block = tempfile
-
-        expect(block).to be_a(File)
+    it "yields the tempfile if a block is given" do
+      uploader.upload(fakeio).download do |tempfile|
+        tempfile.should be_a(File)
       end
     end
 
-    it "returns the block return value" do
-      uploaded_file = uploader.upload(fakeio)
-
-      expect {
-        uploaded_file.download { |_tempfile| "result" }
-      }.to eq("result")
+    it "returns the block's return value" do
+      uploader.upload(fakeio).download { |_tempfile| "result" }.should eq("result")
     end
 
     it "closes and deletes the tempfile after the block" do
       uploaded_file = uploader.upload(fakeio)
 
-      tempfile = uploaded_file.download do |_tempfile|
-        expect(_tempfile.closed?).to be_false
-        _tempfile
+      tempfile = uploaded_file.download do |yielded_tempfile|
+        yielded_tempfile.closed?.should be_false
+        yielded_tempfile
       end
 
-      expect(tempfile.closed?).to be_true
-      expect(File.exists?(tempfile.path)).to be_false
+      tempfile.closed?.should be_true
+      File.exists?(tempfile.path).should be_false
     end
   end
 
   describe "#stream" do
-    it "opens and closes the file after streaming if it was not open" do
+    it "opens and closes the file when it was not open" do
       uploaded_file = uploader.upload(fakeio("content"))
-      uploaded_file.stream(destination = IO::Memory.new)
+      destination = IO::Memory.new
+      uploaded_file.stream(destination)
 
-      expect(destination.to_s).to eq("content")
-      expect(uploaded_file.opened?).to be_false
+      destination.to_s.should eq("content")
+      uploaded_file.opened?.should be_false
     end
   end
 
@@ -348,36 +253,31 @@ Spectator.describe Gemma::UploadedFile do
       uploaded_file = uploader.upload(fakeio("file"))
       new_uploaded_file = uploaded_file.replace(fakeio("replaced"))
 
-      expect(new_uploaded_file.id).to eq(uploaded_file.id)
-      expect(new_uploaded_file.gets_to_end).to eq("replaced")
-      expect(new_uploaded_file.size).to eq("replaced".size)
+      new_uploaded_file.id.should eq(uploaded_file.id)
+      new_uploaded_file.gets_to_end.should eq("replaced")
+      new_uploaded_file.size.should eq("replaced".size)
     end
   end
 
   describe "#delete" do
-    it "delegates to underlying storage" do
+    it "delegates to the storage" do
       uploaded_file = uploader.upload(fakeio)
       uploaded_file.delete
 
-      expect(uploaded_file.exists?).to be_false
+      uploaded_file.exists?.should be_false
     end
   end
 
   describe "#data" do
-    let(metadata) {
-      Gemma::UploadedFile::MetadataType{
-        "foo" => "bar",
-      }
-    }
+    it "returns the uploaded file data hash" do
+      metadata = Gemma::UploadedFile::MetadataType{"foo" => "bar"}
+      uploaded_file = Gemma::UploadedFile.new("foo", "cache", metadata)
 
-    it "returns uploaded file data hash" do
-      expect(uploaded_file.data).to eq(
-        {
-          "id"          => id,
-          "storage_key" => "cache",
-          "metadata"    => metadata,
-        }
-      )
+      uploaded_file.data.should eq({
+        "id"          => "foo",
+        "storage_key" => "cache",
+        "metadata"    => metadata,
+      })
     end
   end
 end

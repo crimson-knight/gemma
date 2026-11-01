@@ -4,16 +4,16 @@ require "../../../src/gemma/plugins/add_metadata"
 class GemmaWithAddMetadata < Gemma
   load_plugin Gemma::Plugins::AddMetadata
 
-  # redefine Gemma#extract_metadata to make it public
+  # Makes Gemma#extract_metadata public for the specs.
   def extract_metadata(io : IO, **options) : Gemma::UploadedFile::MetadataType
     super
   end
 
-  add_metadata :custom, ->{
+  add_metadata :custom, -> {
     "value"
   }
 
-  add_metadata :multiple_values, ->{
+  add_metadata :multiple_values, -> {
     text = io.gets_to_end
 
     Gemma::UploadedFile::MetadataType{
@@ -25,43 +25,41 @@ class GemmaWithAddMetadata < Gemma
   finalize_plugins!
 end
 
-Spectator.describe Gemma::Plugins::AddMetadata do
-  include FileHelpers
+private def metadata_uploader : GemmaWithAddMetadata
+  GemmaWithAddMetadata.new("store")
+end
 
-  let(:uploader) {
-    GemmaWithAddMetadata.new("store")
-  }
-
+describe Gemma::Plugins::AddMetadata do
   describe "Gemma.add_metadata" do
-    describe "with argument" do
+    context "with a single value" do
       it "adds declared metadata" do
-        metadata = uploader.extract_metadata(fakeio)
+        metadata = metadata_uploader.extract_metadata(fakeio)
 
-        expect(metadata["custom"]).to eq("value")
-        expect(metadata["size"]).to be_a(Int32)
+        metadata["custom"].should eq("value")
+        metadata["size"].should be_a(Int32)
       end
 
-      it "adds the metadata method to UploadedFile" do
-        uploaded_file = uploader.upload(fakeio)
+      it "adds the metadata to the UploadedFile" do
+        uploaded_file = metadata_uploader.upload(fakeio)
 
-        expect(uploaded_file.metadata["custom"]).to eq("value")
+        uploaded_file.metadata["custom"].should eq("value")
       end
     end
 
-    describe "with argument" do
+    context "with a hash of values" do
       it "adds declared metadata" do
-        metadata = uploader.extract_metadata(fakeio)
+        metadata = metadata_uploader.extract_metadata(fakeio)
 
-        expect(metadata["custom_1"]).to eq(fakeio.gets_to_end)
-        expect(metadata["custom_2"]).to eq(fakeio.gets_to_end * 2)
-        expect(metadata["size"]).to be_a(Int32)
+        metadata["custom_1"].should eq(fakeio.gets_to_end)
+        metadata["custom_2"].should eq(fakeio.gets_to_end * 2)
+        metadata["size"].should be_a(Int32)
       end
 
-      it "adds the metadata method to UploadedFile" do
-        uploaded_file = uploader.upload(fakeio)
+      it "adds the metadata to the UploadedFile" do
+        uploaded_file = metadata_uploader.upload(fakeio)
 
-        expect(uploaded_file.metadata["custom_1"]).to eq(fakeio.gets_to_end)
-        expect(uploaded_file.metadata["custom_2"]).to eq(fakeio.gets_to_end * 2)
+        uploaded_file.metadata["custom_1"].should eq(fakeio.gets_to_end)
+        uploaded_file.metadata["custom_2"].should eq(fakeio.gets_to_end * 2)
       end
     end
   end

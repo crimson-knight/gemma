@@ -7,28 +7,23 @@ on:
   pull_request:
     branches:
       - master
+
 jobs:
   generate-and-deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Install Crystal
-        uses: oprypin/install-crystal@v1
-        with:
-          crystal: latest
-
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Install dependencies
-        run: shards install
-        env:
-          SHARDS_OPTS: --ignore-crystal-version
+      - name: Build the pinned toolchain image
+        run: docker build --file ci/Dockerfile --tag gemma-ci .
 
       - name: Generate
-        run: crystal docs
+        run: docker run --rm -v "$PWD":/app gemma-ci crystal-alpha docs
 
-      - name: Deploy 🚀
-        uses: JamesIves/github-pages-deploy-action@4.0.0
+      - name: Deploy
+        if: github.event_name == 'push'
+        uses: JamesIves/github-pages-deploy-action@6c2d9db40f9296374acc17b90404b6e8864128c8 # v4.7.3
         with:
           branch: gh-pages
           folder: docs

@@ -1,43 +1,38 @@
 require "./spec_helper"
 
-Spectator.describe Gemma do
-  include GemmaHelpers
-  include FileHelpers
-
+describe Gemma do
   describe ".with_file" do
     context "given a file" do
-      let(exiting_file) { image }
-
       it "yields the given object" do
-        described_class.with_file(exiting_file) do |file|
-          expect(file).to be_a(File)
-          expect(file.closed?).to be_false
-          expect(image.path).to eq(file.path)
+        existing_file = image
+
+        Gemma.with_file(existing_file) do |file|
+          file.should be_a(File)
+          file.closed?.should be_false
+          file.path.should eq(existing_file.path)
         end
       end
     end
 
     context "given an uploaded file instance" do
-      let(uploaded_file) { uploader.upload(fakeio("uploaded_file")) }
-
       it "downloads the uploaded file" do
-        described_class.with_file(uploaded_file) do |file|
-          expect(file).to be_a(File)
-          expect(file.closed?).to be_false
-          expect(file.gets_to_end).to eq("uploaded_file")
+        uploaded_file = uploader.upload(fakeio("uploaded_file"))
+
+        Gemma.with_file(uploaded_file) do |file|
+          file.should be_a(File)
+          file.closed?.should be_false
+          file.gets_to_end.should eq("uploaded_file")
         end
       end
     end
 
     context "given an io stream" do
-      let(file_from_io) { fakeio("file_from_io") }
-
       it "creates and yields a tempfile" do
-        described_class.with_file(file_from_io) do |file|
-          expect(file).to be_a(File)
-          expect(file.closed?).to be_false
-          expect(file.gets_to_end).to eq("file_from_io")
-          expect(file.path).to match(/^#{Dir.tempdir}\/*/)
+        Gemma.with_file(fakeio("file_from_io")) do |file|
+          file.should be_a(File)
+          file.closed?.should be_false
+          file.gets_to_end.should eq("file_from_io")
+          file.path.should start_with(Dir.tempdir)
         end
       end
     end

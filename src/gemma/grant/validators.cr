@@ -26,7 +26,7 @@ class Gemma
           {% end %}
         end
       end
-      
+
       # Validates content type
       macro validate_content_type_of(name, accept = nil, reject = nil, message = nil)
         validate :validate_{{name.id}}_content_type
@@ -57,7 +57,7 @@ class Gemma
           {% end %}
         end
       end
-      
+
       # Validates presence of attachment
       macro validate_presence_of(name, message = nil)
         validate :validate_{{name.id}}_presence
@@ -68,7 +68,7 @@ class Gemma
           end
         end
       end
-      
+
       # Validates dimensions for images
       macro validate_dimensions_of(name, width = nil, height = nil, message = nil)
         validate :validate_{{name.id}}_dimensions
@@ -106,7 +106,7 @@ class Gemma
           {% end %}
         end
       end
-      
+
       # Helper method to match content types with wildcards
       private def content_type_matches?(actual : String, pattern : String) : Bool
         if pattern.includes?("*")
@@ -117,7 +117,7 @@ class Gemma
           actual == pattern
         end
       end
-      
+
       # Validate collection size for has_many_attached
       macro validate_collection_size_of(name, maximum = nil, minimum = nil, message = nil)
         validate :validate_{{name.id}}_collection_size
