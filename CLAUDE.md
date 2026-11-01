@@ -141,17 +141,21 @@ The Grant integration is fully implemented with these key features:
 1. **Attachment Macros**: `has_one_attached` and `has_many_attached`
 2. **Validation System**: File size, content type, dimensions, presence
 3. **Automatic Cleanup**: Old files deleted when replaced
-4. **JSON Storage**: Metadata stored in JSON columns
+4. **JSON Storage**: The file's JSON in a TEXT column the macro declares
 
 Example usage:
 ```crystal
 class User < Grant::Base
   include Gemma::Grant::Attachable
-  
-  column avatar_data : JSON::Any?
-  has_one_attached :avatar
+
+  column id : Int64, primary: true
+  has_one_attached :avatar # declares avatar_data (TEXT)
 end
 ```
+
+Assignment caches; `before_save` promotes and writes the column; replaced
+and cached files are deleted in `after_save_commit`; a rollback deletes the
+promoted file. Validators are `validates_attachment_*_of` Grant rules.
 
 ## Common Tasks and Solutions
 

@@ -7,6 +7,12 @@ module Gemma
       # Copies everything *io* has left into the location *id*. *metadata*
       # describes the file (a storage may turn `filename` and `mime_type`
       # into headers). The storage never closes *io*.
+      #
+      # When reading *io* raises (an IO error, or `Gemma::FileTooLarge` from
+      # the uploader's size limit), the storage writes nothing at *id*: a
+      # file already there stays as it was and no partial file appears. The
+      # built-in storages stage the bytes first and publish them only once
+      # *io* is fully read.
       abstract def upload(io : IO, id : String, metadata : Metadata = Metadata.new) : Nil
 
       # Returns the file at *id* opened for reading. The caller closes it.

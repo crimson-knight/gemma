@@ -1,3 +1,4 @@
+require "grant"
 require "./grant/attachable"
 require "./grant/validators"
 

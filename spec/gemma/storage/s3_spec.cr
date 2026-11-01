@@ -42,8 +42,10 @@ describe Gemma::Storage::S3 do
 
     it "sends the body, the upload options, Content-Type and an RFC 6266 Content-Disposition, all signed" do
       sent_request = nil
+      sent_body = nil
       WebMock.stub(:put, "#{S3_SPEC_HOST}/a/a/a.jpg").to_return do |request|
         sent_request = request
+        sent_body = WebMock.body(request).to_s
         HTTP::Client::Response.new(200)
       end
 
@@ -51,14 +53,61 @@ describe Gemma::Storage::S3 do
 
       request = sent_request
       raise "the PUT never reached the stub" unless request
-      WebMock.body(request).should eq("binary\u0000data")
+      sent_body.should eq("binary\u0000data")
       request.headers["Content-Disposition"].should eq(
         %(inline; filename="r%3Fsum%3F photo.jpg"; filename*=UTF-8''r%C3%A9sum%C3%A9%20photo.jpg))
       request.headers["Content-Type"].should eq("image/jpeg")
       request.headers["x-amz-acl"].should eq("private")
       request.headers["X-Amz-Content-Sha256"].should eq(Digest::SHA256.hexdigest("binary\u0000data"))
-      request.headers["Authorization"].should contain("content-disposition;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date")
+      request.headers["Authorization"].should contain("content-disposition;content-length;content-type;host;x-amz-acl;x-amz-content-sha256;x-amz-date")
       request.headers.has_key?("metadata").should be_false
+    end
+
+    it "streams the body with its Content-Length instead of chunked encoding" do
+      sent_request = nil
+      sent_body = nil
+      WebMock.stub(:put, "#{S3_SPEC_HOST}/big.bin").to_return do |request|
+        sent_request = request
+        sent_body = WebMock.body(request).to_s
+        HTTP::Client::Response.new(200)
+      end
+      bytes = Bytes.new(300_000) { |index| (index % 251).to_u8 }
+
+      s3_storage.upload(IO::Memory.new(bytes), "big.bin")
+
+      request = sent_request
+      raise "the PUT never reached the stub" unless request
+      request.headers["Content-Length"].should eq("300000")
+      request.headers.has_key?("Transfer-Encoding").should be_false
+      request.headers["X-Amz-Content-Sha256"].should eq(Digest::SHA256.hexdigest(bytes))
+      sent_body.to_s.to_slice.should eq(bytes)
+    end
+
+    it "refuses a configured header name that is not an HTTP token" do
+      storage = Gemma::Storage::S3.new(
+        bucket: "test",
+        client: Gemma::Storage::S3::Client.new("us-east-2", "test_key", "test_secret"),
+        upload_options: {"x-evil\r\nInjected" => "1"}
+      )
+
+      expect_raises(ArgumentError, /invalid HTTP header name/) do
+        storage.upload(FakeIO.new("hello"), "object")
+      end
+    end
+
+    it "sends nothing when reading the upload fails" do
+      put_count = 0
+      WebMock.stub(:put, "#{S3_SPEC_HOST}/partial.bin").to_return do |_request|
+        put_count += 1
+        HTTP::Client::Response.new(200)
+      end
+      too_large = Gemma::SizeLimitedIO.new(IO::Memory.new("x" * 100), 10_i64)
+
+      expect_raises(Gemma::FileTooLarge) do
+        s3_storage.upload(too_large, "partial.bin")
+      end
+
+      put_count.should eq(0)
     end
 
     it "sends an SVG as an attachment, so a browser never runs its script inline" do
@@ -142,6 +191,19 @@ describe Gemma::Storage::S3 do
       s3_storage(prefix: "prefix").url("foo.jpg").should start_with("#{S3_SPEC_HOST}/prefix/foo.jpg?")
     end
 
+    it "refuses an expiry S3 would reject: zero, negative, or over seven days" do
+      expect_raises(ArgumentError, /1 to 604800 seconds/) { s3_storage.url("foo.jpg", expires_in: 0) }
+      expect_raises(ArgumentError) { s3_storage.url("foo.jpg", expires_in: -5) }
+      expect_raises(ArgumentError) { s3_storage.url("foo.jpg", expires_in: 8.days) }
+      s3_storage.url("foo.jpg", expires_in: 7.days).should contain("X-Amz-Expires=604800")
+    end
+
+    it "takes expires_in as Float seconds and refuses any other type" do
+      s3_storage.url("foo.jpg", expires_in: 60.0).should contain("X-Amz-Expires=60&")
+      expect_raises(ArgumentError, /expires_in/) { s3_storage.url("foo.jpg", expires_in: "60") }
+      expect_raises(ArgumentError, /expires_in/) { s3_storage.url("foo.jpg", expires_in: Float64::NAN) }
+    end
+
     it "accepts expires_in as a Time::Span or seconds" do
       s3_storage.url("foo.jpg", expires_in: 1.hour).should contain("X-Amz-Expires=3600")
       s3_storage.url("foo.jpg", expires_in: 600).should contain("X-Amz-Expires=600")
@@ -149,14 +211,16 @@ describe Gemma::Storage::S3 do
   end
 
   describe "#open" do
-    it "returns an IO holding the whole object, rewound to position 0" do
+    it "returns the whole object spooled to an unlinked file, rewound to position 0" do
       WebMock.stub(:get, "#{S3_SPEC_HOST}/foo.jpg").to_return(body_io: IO::Memory.new("object bytes"))
 
       io = s3_storage.open("foo.jpg")
 
-      io.should be_a(IO::Memory)
+      raise "expected a File" unless io.is_a?(File)
+      File.exists?(io.path).should be_false
       io.pos.should eq(0)
       io.gets_to_end.should eq("object bytes")
+      io.close
     end
 
     it "reads the object under the prefix" do

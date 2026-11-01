@@ -10,16 +10,12 @@ GRANT_SPEC_DATABASE_PATH = File.join(Dir.tempdir, "gemma-grant-spec-#{Process.pi
 
 Grant::Connections << Grant::Adapter::Sqlite.new(name: "sqlite", url: "sqlite3://#{GRANT_SPEC_DATABASE_PATH}")
 
-# The column type Gemma's Grant layer reads and writes.
-alias AttachmentData = Gemma::UploadedFile
-
 class IntegrationUser < Grant::Base
   connection sqlite
   table integration_users
 
   column id : Int64, primary: true
   column first_name : String?
-  column avatar_data : AttachmentData?, converter: Grant::Converters::Json(AttachmentData, String), column_type: "TEXT"
 
   include Gemma::Grant::Attachable
   include Gemma::Grant::AttachmentValidators
@@ -33,7 +29,6 @@ class IntegrationPost < Grant::Base
 
   column id : Int64, primary: true
   column title : String?
-  column images_data : Array(AttachmentData)?, converter: Grant::Converters::Json(Array(AttachmentData), String), column_type: "TEXT"
 
   include Gemma::Grant::Attachable
 
@@ -52,7 +47,6 @@ class IntegrationDocument < Grant::Base
   table integration_documents
 
   column id : Int64, primary: true
-  column file_data : AttachmentData?, converter: Grant::Converters::Json(AttachmentData, String), column_type: "TEXT"
 
   include Gemma::Grant::Attachable
 
@@ -65,8 +59,6 @@ class IntegrationProfile < Grant::Base
   table integration_profiles
 
   column id : Int64, primary: true
-  column avatar_data : AttachmentData?, converter: Grant::Converters::Json(AttachmentData, String), column_type: "TEXT"
-  column cover_data : AttachmentData?, converter: Grant::Converters::Json(AttachmentData, String), column_type: "TEXT"
 
   include Gemma::Grant::Attachable
   include Gemma::Grant::AttachmentValidators
@@ -74,8 +66,34 @@ class IntegrationProfile < Grant::Base
   has_one_attached :avatar
   has_one_attached :cover
 
-  validate_file_size_of :avatar, maximum: 3
-  validate_content_type_of :cover, accept: ["image/*"]
+  validates_attachment_size_of :avatar, maximum: 3
+  validates_attachment_type_of :cover, accept: ["image/*"]
+end
+
+# Two has_one_attached and one has_many_attached on one model, with a
+# custom singular name and a callback that can fail after the write.
+class IntegrationListing < Grant::Base
+  connection sqlite
+  table integration_listings
+
+  column id : Int64, primary: true
+  column title : String?
+
+  include Gemma::Grant::Attachable
+  include Gemma::Grant::AttachmentValidators
+
+  has_one_attached :photo
+  has_one_attached :floor_plan, uploader: PrefixedLocationUploader
+  has_many_attached :documents, singular: document_file
+
+  validates_attachment_type_of :photo, accept: ["image/*"]
+  validates_attachment_count_of :documents, maximum: 3
+
+  property? fail_after_save = false
+
+  after_save do
+    raise "after_save failed" if fail_after_save?
+  end
 end
 
 GRANT_SPEC_SCHEMA = {
@@ -83,6 +101,7 @@ GRANT_SPEC_SCHEMA = {
   "integration_posts"     => "id INTEGER PRIMARY KEY, title TEXT, images_data TEXT",
   "integration_documents" => "id INTEGER PRIMARY KEY, file_data TEXT",
   "integration_profiles"  => "id INTEGER PRIMARY KEY, avatar_data TEXT, cover_data TEXT",
+  "integration_listings"  => "id INTEGER PRIMARY KEY, title TEXT, photo_data TEXT, floor_plan_data TEXT, documents_data TEXT",
 }
 
 IntegrationUser.adapter.open do |database|

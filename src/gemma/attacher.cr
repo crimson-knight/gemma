@@ -90,8 +90,17 @@ module Gemma
       end
 
       # Caches a multipart part (anything shaped like `Amber::Router::File`).
+      # A union of the accepted types (an Array of mixed uploads and
+      # references, say) arrives here too, so each type is sent to its own
+      # overload.
       def attach_cached(part, **options)
-        attach(part, cache_key, **options)
+        if part.is_a?(IO) || part.nil?
+          attach_cached(part, **options)
+        elsif part.is_a?(CachedFileReference) || part.is_a?(UploadedFile) || part.is_a?(String) || part.is_a?(Hash)
+          attach_cached(part, **options)
+        else
+          attach(part, cache_key, **options)
+        end
       end
 
       # An `UploadedFile` can be deserialized from client JSON, so it goes
@@ -108,7 +117,11 @@ module Gemma
         change(cached(reference))
       end
 
-      def attach_cached(value : String | Hash(String, String), **options)
+      # Attaches the cached file a reference names, given as its JSON or as
+      # a hash of it (form or JSON params), including the nested
+      # `"metadata" => {"filename" => ...}` shape `CachedFileReference#to_json`
+      # produces.
+      def attach_cached(value : String | Hash, **options)
         change(cached(CachedFileReference.parse(value.is_a?(String) ? value : value.to_json)))
       end
 
@@ -137,8 +150,9 @@ module Gemma
         change(upload(part, storage, **options))
       end
 
-      # Deletes any previous file, promotes a newly attached cached file, and
-      # clears dirty tracking.
+      # Promotes a newly attached cached file, then deletes any previous
+      # file, and clears dirty tracking. The previous file is deleted only
+      # after the promotion succeeds, so a failed promotion keeps it.
       #
       # This was called `finalize` before Gemma 0.7. Crystal calls a method
       # named `finalize` from the garbage collector, so every abandoned
@@ -153,8 +167,8 @@ module Gemma
       # attacher.changed? # => false
       # ```
       def promote_and_cleanup : Nil
-        destroy_previous
         promote_cached
+        destroy_previous
         @previous = nil if changed?
       end
 

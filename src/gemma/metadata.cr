@@ -1,4 +1,5 @@
 require "json"
+require "yaml"
 
 module Gemma
   # What Gemma knows about a stored file. Gemma reads `size`, `mime_type`,
@@ -57,6 +58,49 @@ module Gemma
           json.field key, value unless BUILT_IN_KEYS.includes?(key)
         end
       end
+    end
+
+    # The same flat shape as the JSON, for models serialized to YAML.
+    def to_yaml(yaml : YAML::Nodes::Builder) : Nil
+      yaml.mapping do
+        {"filename" => filename, "size" => size, "mime_type" => mime_type, "width" => width, "height" => height}.each do |key, value|
+          next if value.nil?
+
+          yaml.scalar key
+          value.to_yaml(yaml)
+        end
+        extra.each do |key, value|
+          next if BUILT_IN_KEYS.includes?(key)
+
+          yaml.scalar key
+          yaml.scalar value
+        end
+      end
+    end
+
+    def self.new(context : YAML::ParseContext, node : YAML::Nodes::Node)
+      unless node.is_a?(YAML::Nodes::Mapping)
+        node.raise "Expected a mapping for Gemma::Metadata"
+      end
+
+      metadata = new
+      node.nodes.each_slice(2) do |pair|
+        key_node, value_node = pair[0], pair[1]?
+        next unless key_node.is_a?(YAML::Nodes::Scalar) && value_node.is_a?(YAML::Nodes::Scalar)
+
+        value = value_node.value
+        next if YAML::Schema::Core.parse_null?(value_node)
+
+        case key_node.value
+        when "filename"  then metadata.filename = value
+        when "size"      then metadata.size = value.to_i64?
+        when "mime_type" then metadata.mime_type = value
+        when "width"     then metadata.width = value.to_i32?
+        when "height"    then metadata.height = value.to_i32?
+        else                  metadata.extra[key_node.value] = value
+        end
+      end
+      metadata
     end
 
     # Width and height together, when both are known.

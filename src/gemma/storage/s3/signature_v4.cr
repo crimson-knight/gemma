@@ -97,9 +97,14 @@ module Gemma
           Signature.new(@aws_access_key, scope, canonical_request, string_to_sign, signed_header_names, hex_signature)
         end
 
+        # S3 accepts presigned URLs valid for one second up to seven days.
+        MAXIMUM_PRESIGNED_EXPIRY_SECONDS = 604_800_i64
+
         # Builds the query parameters of a presigned URL (SigV4 query-string
         # authentication). Only the `host` header is signed and the payload is
         # `UNSIGNED-PAYLOAD`, as S3 expects for presigned URLs.
+        #
+        # Raises `ArgumentError` unless *expires_in* is 1 to 604,800 seconds.
         #
         # Returns the full, encoded query string including `X-Amz-Signature`,
         # together with the `Signature` it came from.
@@ -111,11 +116,16 @@ module Gemma
           signed_at : Time,
           extra_query_parameters : Array({String, String}) = [] of {String, String},
         ) : {String, Signature}
+          expiry_seconds = expires_in.total_seconds.to_i64
+          unless MAXIMUM_PRESIGNED_EXPIRY_SECONDS >= expiry_seconds >= 1
+            raise ArgumentError.new("presigned URL expiry must be 1 to #{MAXIMUM_PRESIGNED_EXPIRY_SECONDS} seconds, got #{expiry_seconds}")
+          end
+
           query_parameters = extra_query_parameters + [
             {"X-Amz-Algorithm", ALGORITHM},
             {"X-Amz-Credential", "#{@aws_access_key}/#{credential_scope(signed_at)}"},
             {"X-Amz-Date", self.class.long_date(signed_at)},
-            {"X-Amz-Expires", expires_in.total_seconds.to_i64.to_s},
+            {"X-Amz-Expires", expiry_seconds.to_s},
             {"X-Amz-SignedHeaders", "host"},
           ]
           headers = HTTP::Headers{"Host" => host}

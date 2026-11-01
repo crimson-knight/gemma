@@ -1,4 +1,5 @@
 require "json"
+require "yaml"
 require "./metadata"
 
 module Gemma
@@ -11,6 +12,7 @@ module Gemma
   # `{"id": "...", "storage_key": "store", "metadata": {...}}`.
   struct UploadedFile
     include JSON::Serializable
+    include YAML::Serializable
 
     getter id : String
     getter storage_key : String
@@ -126,7 +128,15 @@ module Gemma
       storage.exists?(id)
     end
 
-    # Uploads *io* to this file's location and returns the new file.
+    # Uploads *io* to this file's location, overwriting its bytes, and
+    # returns the new file with metadata read from the new bytes.
+    #
+    # This works below the Grant layer: a record that holds this file keeps
+    # the old size, type and dimensions in its column, and its validators
+    # see those. To change a record's attachment, assign the new upload to
+    # the record (`user.avatar = io`) and save; that stores the bytes under
+    # a new id, re-runs the validators, and deletes the old file after the
+    # commit.
     def replace(io : IO) : UploadedFile
       uploader.upload(io, location: id)
     end

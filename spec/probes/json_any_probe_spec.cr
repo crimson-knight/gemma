@@ -13,7 +13,7 @@ end
 # followup-10-evidence/json_any_probe.cr: the model the README documents
 # (`column avatar_data : JSON::Any?`) did not compile.
 describe "json_any probe" do
-  it_reproduces_known_defect "compiles the Grant model the README documents", fixed_in: "PR 7 (Grant layer)" do
+  it "compiles the Grant model the README documents" do
     result = SnippetCompiler.check <<-CRYSTAL
       require "gemma"
       require "sqlite3"
