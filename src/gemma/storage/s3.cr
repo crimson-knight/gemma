@@ -1,58 +1,74 @@
 require "./base"
-
-require "awscr-s3"
-require "content_disposition"
+require "../content_disposition"
+require "./s3/*"
 
 class Gemma
   module Storage
+    # Stores files in an S3-compatible bucket: AWS S3, DigitalOcean Spaces,
+    # MinIO. It talks to the service through `Gemma::Storage::S3::Client`,
+    # which signs requests with AWS Signature Version 4 and needs no XML
+    # library.
+    #
+    # ```
+    # client = Gemma::Storage::S3::Client.new("nyc3", "key", "secret",
+    #   endpoint: "https://nyc3.digitaloceanspaces.com")
+    # storage = Gemma::Storage::S3.new(bucket: "my-bucket", client: client, prefix: "uploads")
+    # ```
     class S3 < Storage::Base
+      DEFAULT_URL_EXPIRY = 1.day
+
       getter bucket : String
-      getter client : Awscr::S3::Client
+      getter client : Client
       getter? public : Bool
 
-      # Initializes a storage for uploading to S3. All options are forwarded to
-      # [`Gemma::Storage::S3#initialize`], except the following:
+      # Initializes a storage for uploading to S3.
       #
       # :bucket
       # : (Required). Name of the S3 bucket.
       #
       # :client
-      # : By default an `Awscr::S3::Client` instance is created internally from
-      #   additional options, but you can use this option to provide your own
-      #   client.
+      # : (Required). A `Gemma::Storage::S3::Client` holding the region,
+      #   credentials, endpoint and addressing style.
       #
       # :prefix
       # : "Directory" inside the bucket to store files into.
       #
       # :upload_options
-      # : Additional options that will be used for uploading files.
+      # : Additional headers sent with every upload, e.g. `{"x-amz-acl" => "private"}`.
       #
       # :public
-      # : Sets public access to all uploading files.
+      # : Sets public access (`x-amz-acl: public-read`) on every uploaded file.
       #
       def initialize(
         @bucket : String,
-        @client : Awscr::S3::Client?,
+        @client : Client,
         @prefix : String? = nil,
         @upload_options : Hash(String, String) = Hash(String, String).new,
-        @public : Bool = false
+        @public : Bool = false,
       )
       end
 
       # Copies the file into the given location.
       #
       def upload(io : IO | UploadedFile, id : String, move = false, **upload_options)
-        options = Hash(String, String).new
+        headers = Hash(String, String).new
         if (metadata = upload_options[:metadata]?) && metadata.is_a?(Gemma::UploadedFile::MetadataType)
-          options["Content-Disposition"] = ContentDisposition.inline(metadata["filename"].to_s) if metadata["filename"]
+          if filename = metadata["filename"]?
+            headers["Content-Disposition"] = ContentDisposition.inline(filename.to_s)
+          end
         end
-        options["x-amz-acl"] = "public-read" if public?
+        headers["x-amz-acl"] = "public-read" if public?
 
-        options.merge!(@upload_options)
-        upload_options.each { |key, value| options[key.to_s] = value.to_s }
+        headers.merge!(@upload_options)
+        upload_options.each do |option_name, value|
+          next if option_name == :metadata
+          headers[option_name.to_s] = value.to_s
+        end
 
-        io = io.io if io.is_a?(UploadedFile)
-        client.put_object(bucket, object_key(id), io.gets_to_end, options)
+        source = io.is_a?(UploadedFile) ? io.io : io
+        body = IO::Memory.new
+        IO.copy(source, body)
+        client.put_object(bucket, object_key(id), body.to_slice, headers)
 
         true
       end
@@ -61,40 +77,42 @@ class Gemma
         upload(io, id, move, **(upload_options.merge(metadata: metadata)))
       end
 
-      # Returns a rewound IO object from S3.
+      # Returns an IO holding the whole object, rewound to position 0. The
+      # HTTP connection is already closed, so the IO stays readable.
+      # Raises `Gemma::FileNotFound` when the object does not exist.
       def open(id : String, **options) : IO
         io = IO::Memory.new
-        client.get_object(bucket, object_key(id)) do |obj|
-          IO.copy(obj.body_io, io)
+        client.get_object(bucket, object_key(id)) do |response|
+          if body_io = response.body_io?
+            IO.copy(body_io, io)
+          else
+            io << response.body
+          end
         end
-
         io.rewind
+      rescue error : ResponseError
+        raise error unless error.status_code == 404
+        raise Gemma::FileNotFound.new("file #{id.inspect} not found on storage: #{error.message}")
       end
 
-      # Returns the presigned URL to the file.
+      # Returns a presigned GET URL to the file. Pass `expires_in:` (a
+      # `Time::Span` or a number of seconds) to change the default of one day.
       def url(id : String, **options) : String
-        presigned_options = Awscr::S3::Presigned::Url::Options.new(
-          aws_access_key: client.@aws_access_key,
-          aws_secret_key: client.@aws_secret_key,
-          region: client.@region,
-          object: "/#{object_key(id)}",
-          bucket: bucket,
-        )
-
-        url = Awscr::S3::Presigned::Url.new(presigned_options)
-        url.for(:get)
+        client.presigned_url(bucket, object_key(id), expires_in: url_expiry(options[:expires_in]?))
       end
 
-      # Returns true if the file exists on the S3.
+      # Returns true if the file exists on S3. S3 answers 403 instead of 404
+      # for a missing object when the credentials may not list the bucket, so
+      # both mean "does not exist"; any other failure raises `ResponseError`.
       def exists?(id : String) : Bool
-        client.head_object(bucket, object: object_key(id))
+        client.head_object(bucket, object_key(id))
         true
-      rescue Awscr::S3::Exception
+      rescue error : ResponseError
+        raise error unless {403, 404}.includes?(error.status_code)
         false
       end
 
-      # Delets the file, and by default deletes the containing directory if
-      # it's empty.
+      # Deletes the file.
       def delete(id : String) : Bool
         client.delete_object(bucket, object_key(id))
       end
@@ -109,6 +127,16 @@ class Gemma
       # Returns object key with potential prefix.
       def object_key(id : String) : String
         @prefix ? [@prefix, id].join("/") : id
+      end
+
+      private def url_expiry(requested_expiry) : Time::Span
+        if requested_expiry.is_a?(Time::Span)
+          requested_expiry
+        elsif requested_expiry.is_a?(Int)
+          requested_expiry.seconds
+        else
+          DEFAULT_URL_EXPIRY
+        end
       end
     end
   end

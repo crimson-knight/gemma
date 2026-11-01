@@ -111,7 +111,7 @@ Gemma.configure do |config|
   config.storages["store"] = Gemma::Storage::FileSystem.new("uploads")
   
   # S3 storage
-  client = Awscr::S3::Client.new("region", "key", "secret")
+  client = Gemma::Storage::S3::Client.new("region", "key", "secret")
   config.storages["s3"] = Gemma::Storage::S3.new(
     bucket: "my-bucket",
     client: client,

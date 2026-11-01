@@ -56,9 +56,7 @@ Gemma.configure do |config|
 end
 
 # For S3 storage
-require "awscr-s3"
-
-client = Awscr::S3::Client.new(
+client = Gemma::Storage::S3::Client.new(
   region: ENV["AWS_REGION"],
   aws_access_key: ENV["AWS_ACCESS_KEY_ID"],
   aws_secret_key: ENV["AWS_SECRET_ACCESS_KEY"]

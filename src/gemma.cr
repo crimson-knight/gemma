@@ -1,8 +1,8 @@
+require "./gemma/error"
+require "./gemma/settings"
 require "./gemma/storage/*"
 require "./gemma/attacher"
 require "./gemma/uploaded_file"
-
-require "habitat"
 
 require "log"
 
@@ -11,25 +11,25 @@ Log.setup_from_env
 class Gemma
   PLUGINS = [] of Nil
 
-  class Error < Exception; end
-
-  # Raised when a file is not a valid IO.
-  class InvalidFile < Error
-    def initialize(io, missing_methods)
-      super "#{io.inspect} is not a valid IO object (it doesn't respond to #{missing_methods.map { |m, _| "##{m}" }.join(", ")})"
-    end
+  # Returns Gemma's settings. Subclasses share the settings of `Gemma`.
+  def self.settings : Settings
+    SETTINGS
   end
 
-  # Raised by the storage in the #open method.
-  class FileNotFound < Error
+  # :ditto:
+  def settings : Settings
+    SETTINGS
   end
 
-  # Raised by the attacher when assigned uploaded file is not cached.
-  class NotCached < Error
-  end
-
-  Habitat.create do
-    setting storages : Hash(String, Storage::Base) = Hash(String, Storage::Base).new
+  # Yields the settings for configuration at boot.
+  #
+  # ```
+  # Gemma.configure do |config|
+  #   config.storages["store"] = Gemma::Storage::FileSystem.new("uploads")
+  # end
+  # ```
+  def self.configure(&) : Nil
+    yield settings
   end
 
   struct PluginSettings
@@ -181,8 +181,9 @@ class Gemma
       new("store").upload(io, **options)
     end
 
-    def raise_if_missing_settings!
-      Habitat.raise_if_missing_settings!
+    # Kept for apps that call it after configuration. Every Gemma setting
+    # has a default, so there is nothing that can be missing.
+    def raise_if_missing_settings! : Nil
     end
 
     def uploaded_file(hash : Hash(String, String | UploadedFile::MetadataType))
@@ -206,7 +207,7 @@ class Gemma
     # Gemma.with_file(io) { |file| file.path }
     # ```
     #
-    def with_file(io : IO)
+    def with_file(io : IO, &)
       if io.responds_to?(:path)
         yield io
       else
@@ -218,7 +219,7 @@ class Gemma
       end
     end
 
-    def with_file(uploaded_file : UploadedFile)
+    def with_file(uploaded_file : UploadedFile, &)
       uploaded_file.download do |tempfile|
         yield tempfile
       end

@@ -68,15 +68,35 @@ FileImport::AssetUploader.upload(file, "store", context: { model: YOUR_ORM_MODEL
 
 #### Creating a Client
 
-```crystal
-client = Awscr::S3::Client.new("region", "key", "secret")
-```
-
-For S3 compatible services, like DigitalOcean Spaces or Minio, you'll need to set a custom endpoint:
+Gemma talks to S3 itself: it signs requests with AWS Signature Version 4
+(OpenSSL HMAC-SHA256 from the standard library) and uses `HTTP::Client`, so it
+needs no XML library and no extra shard.
 
 ```crystal
-client = Awscr::S3::Client.new("nyc3", "key", "secret", endpoint: "https://nyc3.digitaloceanspaces.com")
+client = Gemma::Storage::S3::Client.new("us-east-2", "key", "secret")
 ```
+
+For S3 compatible services, like DigitalOcean Spaces or MinIO, set a custom endpoint:
+
+```crystal
+client = Gemma::Storage::S3::Client.new("nyc3", "key", "secret", endpoint: "https://nyc3.digitaloceanspaces.com")
+client = Gemma::Storage::S3::Client.new("us-east-1", "key", "secret", endpoint: "http://localhost:9000")
+```
+
+The client addresses buckets in one of two styles:
+
+- `:virtual_hosted` (`https://<bucket>.<endpoint host>/<key>`), the default for AWS and
+  DigitalOcean Spaces. Spaces presigned URLs only work in this style.
+- `:path` (`https://<endpoint host>/<bucket>/<key>`), the default for any other endpoint
+  such as MinIO. Choose it on AWS for bucket names that contain dots.
+
+```crystal
+client = Gemma::Storage::S3::Client.new("us-east-2", "key", "secret", addressing_style: :path)
+```
+
+A request that fails raises `Gemma::Storage::S3::ResponseError`, whose message holds the
+HTTP status and the raw response body (`#status_code`, `#response_body`).
+`Gemma::Storage::S3#open` raises `Gemma::FileNotFound` for a missing object.
 
 #### Create a S3 storage
 
@@ -96,6 +116,13 @@ You can tell S3 storage to make uploads public:
 
 ```crystal
 storage = Gemma::Storage::S3.new(bucket: "bucket_name", client: client, public: true)
+```
+
+`#url` returns a presigned GET URL valid for one day; pass `expires_in:` (a `Time::Span`
+or seconds) to change that:
+
+```crystal
+storage.url("photo.jpg", expires_in: 1.hour)
 ```
 
 ### ORM usage example
