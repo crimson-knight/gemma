@@ -23,7 +23,7 @@ private class ForwardOnlyIO < IO
   end
 end
 
-private class FiveMegabyteUploader < Gemma
+private class FiveMegabyteUploader < Gemma::Uploader
   def max_size : Int64?
     5_000_000_i64
   end

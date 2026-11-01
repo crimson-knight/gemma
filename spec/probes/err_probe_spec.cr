@@ -1,11 +1,12 @@
 require "../spec_helper"
 require "../../src/gemma/plugins/determine_mime_type"
 
-private class ErrProbeFileCommandUploader < Gemma
-  load_plugin(Gemma::Plugins::DetermineMimeType,
-    analyzer: Gemma::Plugins::DetermineMimeType::Tools::File)
+private class ErrProbeFileCommandUploader < Gemma::Uploader
+  include Gemma::Plugins::DetermineMimeType
 
-  finalize_plugins!
+  def self.mime_type_tool : Gemma::Plugins::DetermineMimeType::Tools
+    Gemma::Plugins::DetermineMimeType::Tools::File
+  end
 end
 
 # Runs the block with an empty PATH, so no external command can be found.

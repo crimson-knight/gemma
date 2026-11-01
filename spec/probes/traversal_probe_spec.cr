@@ -3,11 +3,12 @@ require "../../src/gemma/plugins/determine_mime_type"
 
 # Reads MIME types from content with the `file` command, so the cached
 # reference spec can tell "read from the stored bytes" apart from "missing".
-class ContentMimeTypeUploader < Gemma
-  load_plugin(Gemma::Plugins::DetermineMimeType,
-    analyzer: Gemma::Plugins::DetermineMimeType::Tools::File)
+class ContentMimeTypeUploader < Gemma::Uploader
+  include Gemma::Plugins::DetermineMimeType
 
-  finalize_plugins!
+  def self.mime_type_tool : Gemma::Plugins::DetermineMimeType::Tools
+    Gemma::Plugins::DetermineMimeType::Tools::File
+  end
 end
 
 # followup-10-evidence/traversal_probe.cr: cached-file JSON from a client

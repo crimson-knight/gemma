@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   module Storage
     # The contract every storage implements. A storage only ever receives an
     # `IO` to read from; the uploader opens an `UploadedFile` source and

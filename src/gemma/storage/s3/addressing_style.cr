@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   module Storage
     class S3 < Storage::Base
       # How a bucket appears in request URLs.

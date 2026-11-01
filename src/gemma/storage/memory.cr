@@ -1,6 +1,6 @@
 require "./base"
 
-class Gemma
+module Gemma
   module Storage
     # Keeps files in a hash in memory, for specs and development. Access is
     # synchronized, so fibers on several threads can share one instance.

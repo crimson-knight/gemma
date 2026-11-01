@@ -1,10 +1,12 @@
-class Gemma
+module Gemma
   # Core class that handles attaching files. It uses Gemma and
   # Gemma::UploadedFile objects internally.
   class Attacher
-    # Returns the Gemma class that this attacher class is namespaced
-    # under.
-    class_getter gemma_class : Gemma.class = Gemma
+    # The uploader this attacher uploads with. Each uploader subclass has
+    # its own `Attacher` subclass that returns it.
+    def self.uploader_class : Gemma::Uploader.class
+      Gemma::Uploader
+    end
 
     module ClassMethods
       # Initializes the attacher from a data hash generated from `Attacher#data`.
@@ -16,6 +18,18 @@ class Gemma
       def from_data(data : UploadedFile?, **options)
         attacher = new(**options)
         attacher.load_data(data)
+        attacher
+      end
+
+      # Initializes the attacher from a database column's JSON (trusted: it
+      # is what Gemma wrote), or nil for an empty column.
+      #
+      # ```
+      # Attacher.from_column(%({"id":"...","storage_key":"store","metadata":{}}))
+      # ```
+      def from_column(data : String?, **options)
+        attacher = new(**options)
+        attacher.load_column(data)
         attacher
       end
     end
@@ -85,6 +99,12 @@ class Gemma
       # holds, and its metadata is read again from the stored bytes.
       def attach_cached(value : UploadedFile, **options)
         reference = CachedFileReference.new(value.id, value.storage_key, CachedFileReference::ClientMetadata.new(value.original_filename))
+        change(cached(reference))
+      end
+
+      # Attaches the cached file a client's reference names, after checking
+      # that the cache issued it (see `#cached`).
+      def attach_cached(reference : CachedFileReference, **options)
         change(cached(reference))
       end
 
@@ -168,7 +188,7 @@ class Gemma
       #     # pass additional options for the uploader
       #     attacher.upload(io, "store", metadata: { "foo" => "bar" })
       def upload(io, storage = store_key, **options) : Gemma::UploadedFile
-        gemma_class.upload(io, storage, **options)
+        uploader_class.upload(io, storage, **options)
       end
 
       # If a new file was attached, deletes previously attached file if any.
@@ -307,10 +327,25 @@ class Gemma
         file
       end
 
-      # Returns the Gemma class that this attacher's class is namespaced
-      # under.
-      def gemma_class
-        self.class.gemma_class
+      # Loads the attachment from a database column's JSON.
+      def load_column(data : String) : UploadedFile?
+        load_data(UploadedFile.from_json(data))
+      end
+
+      def load_column(data : Nil) : Nil
+        load_data(nil)
+        nil
+      end
+
+      # The attached file as JSON for a database column, or nil when
+      # nothing is attached.
+      def column_data : String?
+        file.try &.to_json
+      end
+
+      # The uploader this attacher uploads with.
+      def uploader_class : Gemma::Uploader.class
+        self.class.uploader_class
       end
 
       # Turns a client's cached-file reference into an `UploadedFile`, after
@@ -330,7 +365,7 @@ class Gemma
           raise InvalidLocation.new("#{reference.id.inspect} is not a location Gemma generates")
         end
 
-        cache_uploader = gemma_class.new(cache_key)
+        cache_uploader = uploader_class.new(cache_key)
         unless cache_uploader.storage.exists?(reference.id)
           raise NotCached.new("no cached file #{reference.id.inspect}")
         end

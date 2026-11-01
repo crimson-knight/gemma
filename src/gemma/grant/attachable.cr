@@ -1,10 +1,10 @@
 require "../attacher"
 require "grant"
 
-class Gemma
+module Gemma
   module Grant
     module Attachable
-      macro has_one_attached(name, uploader = Gemma)
+      macro has_one_attached(name, uploader = Gemma::Uploader)
         {% attacher_name = "_#{name.id}_attacher".id %}
         {% column = "#{name.id}_data".id %}
 
@@ -77,7 +77,7 @@ class Gemma
         end
       end
 
-      macro has_many_attached(name, uploader = Gemma)
+      macro has_many_attached(name, uploader = Gemma::Uploader)
         {% column = "#{name.id}_data".id %}
         {% singular = name.id.underscore.gsub(/s$/, "").id %}
         {% attachers_name = "_#{name.id}_attachers".id %}

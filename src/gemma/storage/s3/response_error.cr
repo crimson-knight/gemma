@@ -1,6 +1,6 @@
 require "../../error"
 
-class Gemma
+module Gemma
   module Storage
     class S3 < Storage::Base
       # Raised when an S3-compatible service answers with a status outside

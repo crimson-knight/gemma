@@ -41,7 +41,7 @@ class IntegrationPost < Grant::Base
 end
 
 # An uploader that stores files under `test/`.
-class PrefixedLocationUploader < Gemma
+class PrefixedLocationUploader < Gemma::Uploader
   def generate_location(metadata : Gemma::Metadata) : String
     File.join("test", super)
   end

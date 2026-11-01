@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   module Plugins
     # Records image width and height in each upload's metadata
     # (`Metadata#width`, `Metadata#height`). Files that are not images, or
@@ -10,56 +10,68 @@ class Gemma
     #   bytes. Opt-in; it needs ImageMagick installed.
     #
     # ```
-    # class AvatarUploader < Gemma
-    #   load_plugin Gemma::Plugins::StoreDimensions
-    #
-    #   finalize_plugins!
+    # class AvatarUploader < Gemma::Uploader
+    #   include Gemma::Plugins::StoreDimensions
     # end
     #
     # AvatarUploader.upload(png, "store").metadata.width # => 300
     # ```
+    #
+    # Choose `identify` by overriding `.dimensions_tool`:
+    #
+    # ```
+    # class PosterUploader < Gemma::Uploader
+    #   include Gemma::Plugins::StoreDimensions
+    #
+    #   def self.dimensions_tool : Gemma::Plugins::StoreDimensions::Tools
+    #     Gemma::Plugins::StoreDimensions::Tools::Identify
+    #   end
+    # end
+    # ```
     module StoreDimensions
-      DEFAULT_OPTIONS = {
-        analyzer: Gemma::Plugins::StoreDimensions::Tools::Header,
-      }
-
       enum Tools
         Header
         Identify
       end
 
+      macro included
+        extend Gemma::Plugins::StoreDimensions::ClassMethods
+      end
+
       module ClassMethods
+        # The analyzer this uploader uses. Override it to choose another.
+        def dimensions_tool : Tools
+          Tools::Header
+        end
+
         # Reads the dimensions of the image *io* starts with, raising
         # `Gemma::AnalyzerFailed` when it has none. Reads the first
-        # `SNIFF_BYTES` of *io* and does not rewind it.
+        # `Gemma::SNIFF_BYTES` of *io* and does not rewind it.
         def extract_dimensions(io : IO) : {Int32, Int32}
           prefix = Gemma.read_prefix(io, Gemma::SNIFF_BYTES)
           dimensions_analyzer.call(prefix) || raise AnalyzerFailed.new("cannot read image dimensions")
         end
 
-        # Returns the analyzer configured for this uploader.
         def dimensions_analyzer : DimensionsAnalyzer
-          DimensionsAnalyzer.new(plugin_settings.store_dimensions[:analyzer])
+          DimensionsAnalyzer.new(dimensions_tool)
         end
       end
 
-      module InstanceMethods
-        def extract_metadata(prefix : Bytes, metadata : Metadata) : Metadata
-          metadata = super
-          if metadata.mime_type.try(&.starts_with?("image/"))
-            if found = image_dimensions(prefix)
-              metadata.width, metadata.height = found
-            end
+      def extract_metadata(prefix : Bytes, metadata : Metadata) : Metadata
+        metadata = super
+        if metadata.mime_type.try(&.starts_with?("image/"))
+          if found = image_dimensions(prefix)
+            metadata.width, metadata.height = found
           end
-          metadata
         end
+        metadata
+      end
 
-        private def image_dimensions(prefix : Bytes) : {Int32, Int32}?
-          self.class.dimensions_analyzer.call(prefix)
-        rescue error : AnalyzerFailed
-          Log.warn(exception: error) { "stored an image without dimensions" }
-          nil
-        end
+      private def image_dimensions(prefix : Bytes) : {Int32, Int32}?
+        self.class.dimensions_analyzer.call(prefix)
+      rescue error : AnalyzerFailed
+        Log.warn(exception: error) { "stored an image without dimensions" }
+        nil
       end
 
       class DimensionsAnalyzer

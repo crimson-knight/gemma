@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   # Builds `Content-Disposition` header values (RFC 6266) whose file name
   # survives any character set: a plain `filename` parameter with an ASCII
   # fallback, and a `filename*` parameter carrying the UTF-8 name encoded per

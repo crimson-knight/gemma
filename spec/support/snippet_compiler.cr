@@ -38,6 +38,13 @@ module SnippetCompiler
     def should_succeed : Nil
       fail(summary) unless succeeded?
     end
+
+    # Fails the current example unless the snippet failed with *message* in
+    # its output (a compile error raised by a macro, for example).
+    def should_fail_with(message : String) : Nil
+      fail("expected a failure mentioning #{message.inspect}, but the snippet succeeded") if exit_code == 0
+      fail("expected #{message.inspect} in the output, got: #{summary}") unless output.includes?(message)
+    end
   end
 
   # Type-checks *source* without generating code.

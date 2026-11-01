@@ -1,9 +1,9 @@
 require "mime"
 
-class Gemma
+module Gemma
   module Plugins
-    # Chooses how an uploader detects MIME types. Without this plugin Gemma
-    # uses its built-in magic-byte sniffer (`Tools::MagicBytes`).
+    # Chooses how an uploader detects MIME types. Without this module an
+    # uploader uses Gemma's built-in magic-byte sniffer (`Tools::MagicBytes`).
     #
     # - `Tools::MagicBytes`: the built-in sniffer.
     # - `Tools::File`: the `file(1)` command, fed the upload's first bytes.
@@ -16,19 +16,19 @@ class Gemma
     # browser runs (HTML, XHTML, XML, SVG, JavaScript): such a claim gives
     # `application/octet-stream`.
     #
-    # ```
-    # class DocumentUploader < Gemma
-    #   load_plugin(Gemma::Plugins::DetermineMimeType,
-    #     analyzer: Gemma::Plugins::DetermineMimeType::Tools::File)
+    # Include the module and choose the analyzer by overriding
+    # `.mime_type_tool`:
     #
-    #   finalize_plugins!
+    # ```
+    # class DocumentUploader < Gemma::Uploader
+    #   include Gemma::Plugins::DetermineMimeType
+    #
+    #   def self.mime_type_tool : Gemma::Plugins::DetermineMimeType::Tools
+    #     Gemma::Plugins::DetermineMimeType::Tools::File
+    #   end
     # end
     # ```
     module DetermineMimeType
-      DEFAULT_OPTIONS = {
-        analyzer: Gemma::Plugins::DetermineMimeType::Tools::MagicBytes,
-      }
-
       enum Tools
         MagicBytes
         File
@@ -36,9 +36,18 @@ class Gemma
         ContentType
       end
 
+      macro included
+        extend Gemma::Plugins::DetermineMimeType::ClassMethods
+      end
+
       module ClassMethods
-        # Detects the MIME type of *io* with the configured analyzer. Reads
-        # the first `SNIFF_BYTES` of *io* and does not rewind it.
+        # The analyzer this uploader uses. Override it to choose another.
+        def mime_type_tool : Tools
+          Tools::MagicBytes
+        end
+
+        # Detects the MIME type of *io* with this uploader's analyzer. Reads
+        # the first `Gemma::SNIFF_BYTES` of *io* and does not rewind it.
         def determine_mime_type(io : IO) : String?
           metadata = Metadata.new(filename: Gemma.client_filename(io))
           if declared = Gemma.declared_content_type(io)
@@ -48,16 +57,13 @@ class Gemma
           mime_type_analyzer.call(prefix, metadata)
         end
 
-        # Returns the analyzer configured for this uploader.
         def mime_type_analyzer : MimeTypeAnalyzer
-          MimeTypeAnalyzer.new(plugin_settings.determine_mime_type[:analyzer])
+          MimeTypeAnalyzer.new(mime_type_tool)
         end
       end
 
-      module InstanceMethods
-        def detect_mime_type(prefix : Bytes, metadata : Metadata) : String?
-          self.class.mime_type_analyzer.call(prefix, metadata)
-        end
+      def detect_mime_type(prefix : Bytes, metadata : Metadata) : String?
+        self.class.mime_type_analyzer.call(prefix, metadata)
       end
 
       class MimeTypeAnalyzer

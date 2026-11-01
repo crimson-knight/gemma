@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   # How many leading bytes of an upload the analyzers read. Large enough
   # for a JPEG's frame header after big EXIF and ICC segments.
   SNIFF_BYTES = 256 * 1024

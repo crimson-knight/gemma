@@ -8,10 +8,10 @@ Gemma is a Crystal file attachment toolkit inspired by Ruby's Shrine gem. It pro
 
 ### Main Components
 
-1. **Gemma Base Class** (`src/gemma.cr`)
-   - Central uploader class with plugin system
-   - Handles file upload, storage, and metadata extraction
-   - Extensible through inheritance and plugins
+1. **Gemma module and `Gemma::Uploader`** (`src/gemma.cr`, `src/gemma/uploader.cr`)
+   - `Gemma` holds settings and module functions (`Gemma.configure`, `Gemma.upload`)
+   - `Gemma::Uploader` streams uploads, detects MIME type and size from the bytes
+   - Apps subclass `Gemma::Uploader` and include plugin modules
 
 2. **Storage Adapters** (`src/gemma/storage/`)
    - `FileSystem`: Local file storage
@@ -122,13 +122,14 @@ end
 
 ### Custom Uploaders
 
-Create custom uploaders by inheriting from `Gemma`:
+Create custom uploaders by inheriting from `Gemma::Uploader`:
 
 ```crystal
-class ImageUploader < Gemma
-  def generate_location(io, metadata, context, **options)
-    name = super(io, metadata, **options)
-    File.join("images", context[:model].id.to_s, name)
+class ImageUploader < Gemma::Uploader
+  include Gemma::Plugins::StoreDimensions
+
+  def generate_location(metadata : Gemma::Metadata) : String
+    File.join("images", super)
   end
 end
 ```
@@ -163,10 +164,12 @@ end
 
 ### Creating New Plugin
 
-1. Create plugin module in `src/gemma/plugins/`
-2. Define plugin modules: `ClassMethods`, `InstanceMethods`, `FileMethods`, etc.
-3. Use `load_plugin` macro in uploader class
-4. Add `finalize_plugins!` after loading all plugins
+1. Create a module in `src/gemma/plugins/` that overrides uploader methods
+   (`extract_metadata`, `detect_mime_type`) and calls `super`
+2. Put class-level methods in a nested `ClassMethods` module, extended from
+   the plugin's `macro included`; settings are class methods an uploader overrides
+3. Apps `include` the module in a `Gemma::Uploader` subclass
+4. Add specs in `spec/gemma/plugins/`
 
 ### Fixing Segmentation Faults
 

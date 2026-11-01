@@ -4,7 +4,7 @@ require "./addressing_style"
 require "./response_error"
 require "./signature_v4"
 
-class Gemma
+module Gemma
   module Storage
     class S3 < Storage::Base
       # A small S3 client that covers what `Gemma::Storage::S3` needs:

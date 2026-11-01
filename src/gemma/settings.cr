@@ -1,4 +1,4 @@
-class Gemma
+module Gemma
   # Holds Gemma's configuration. Apps change it in `Gemma.configure`, usually
   # from `config/initializers/gemma.cr`.
   class Settings
