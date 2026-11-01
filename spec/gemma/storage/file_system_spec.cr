@@ -55,6 +55,39 @@ describe Gemma::Storage::FileSystem do
         end
       end
 
+      it "creates nothing outside when a prefix runs through a symlink" do
+        with_root do |root|
+          outside = temporary_root
+          Dir.mkdir_p(outside)
+          Dir.mkdir_p(root)
+          begin
+            File.symlink(outside, File.join(root, "linked"))
+
+            expect_raises(ArgumentError) { file_system_storage(root, prefix: "linked/nested") }
+            Dir.exists?(File.join(outside, "nested")).should be_false
+          ensure
+            FileUtils.rm_rf(outside)
+          end
+        end
+      end
+
+      it "refuses every operation once the prefix is swapped for a symlink" do
+        with_root do |root|
+          outside = temporary_root
+          Dir.mkdir_p(outside)
+          begin
+            storage = file_system_storage(root, prefix: "cache")
+            FileUtils.rm_rf(storage.expanded_directory)
+            File.symlink(outside, storage.expanded_directory)
+
+            expect_raises(Gemma::InvalidLocation) { storage.upload(fakeio("pwn"), "planted.txt") }
+            File.exists?(File.join(outside, "planted.txt")).should be_false
+          ensure
+            FileUtils.rm_rf(outside)
+          end
+        end
+      end
+
       it "refuses a prefix that is a symlink to a directory outside" do
         with_root do |root|
           outside = temporary_root

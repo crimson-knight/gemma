@@ -26,6 +26,21 @@ describe Gemma::Attacher do
       previous_file.exists?.should be_false
     end
 
+    it "keeps the file it would replace when the promotion fails" do
+      attacher = Gemma::Attacher.new
+      attacher.attach(fakeio("old"))
+      previous_file = attacher.file || fail("expected an attached file")
+      attacher.promote_and_cleanup
+
+      attacher.attach_cached(fakeio("new"))
+      cached_file = attacher.file || fail("expected a cached file")
+      memory_storage("cache").delete(cached_file.id)
+
+      expect_raises(Gemma::FileNotFound) { attacher.promote_and_cleanup }
+
+      previous_file.exists?.should be_true
+    end
+
     it "clears dirty tracking" do
       attacher = Gemma::Attacher.new
       attacher.attach_cached(fakeio)

@@ -39,9 +39,17 @@ module Gemma
       def initialize(@directory : String, @prefix : String? = nil, @clean : Bool = true, @permissions : Int32 = DEFAULT_PERMISSIONS, @directory_permissions : Int32 = DEFAULT_DIRECTORY_PERMISSIONS)
         ensure_prefix_is_plain
         unless Dir.exists?(expanded_directory)
+          Dir.mkdir_p(File.expand_path(directory), mode: directory_permissions)
+          # Check the part of the prefix that exists before creating the
+          # rest, so a symlink there never gets a directory made through it.
+          unless existing_prefix_is_inside_directory?
+            raise ArgumentError.new("FileSystem prefix #{prefix.inspect} resolves outside #{directory.inspect} through a symlink")
+          end
           Dir.mkdir_p(expanded_directory, mode: directory_permissions)
         end
-        ensure_prefix_stays_inside_directory
+        unless existing_prefix_is_inside_directory?
+          raise ArgumentError.new("FileSystem prefix #{prefix.inspect} resolves outside #{directory.inspect} through a symlink")
+        end
       end
 
       # The absolute directory files are stored in: *directory* plus
@@ -97,6 +105,9 @@ module Gemma
           raise InvalidLocation.new("location #{id.inspect} resolves outside the storage directory")
         end
 
+        unless existing_prefix_is_inside_directory?
+          raise InvalidLocation.new("location #{id.inspect}: the storage prefix leads outside #{directory.inspect} through a symlink")
+        end
         ensure_real_path_inside(resolved, root, id)
         resolved.to_s
       end
@@ -173,14 +184,22 @@ module Gemma
         end
       end
 
-      private def ensure_prefix_stays_inside_directory : Nil
-        return unless relative_prefix
+      # Whether the deepest existing directory along *prefix* resolves,
+      # through any symlinks, inside *directory*. Checked at construction
+      # and again before every operation, so a prefix replaced by a symlink
+      # later is refused too.
+      private def existing_prefix_is_inside_directory? : Bool
+        return true unless relative_prefix
 
         real_directory = Path[File.realpath(File.expand_path(directory))]
-        real_root = Path[File.realpath(expanded_directory)]
-        unless real_root == real_directory || real_root.parents.includes?(real_directory)
-          raise ArgumentError.new("FileSystem prefix #{prefix.inspect} resolves outside #{directory.inspect} through a symlink")
+        existing = Path[expanded_directory]
+        until File.exists?(existing) || File.symlink?(existing)
+          existing = existing.parent
         end
+        real_existing = Path[File.realpath(existing)]
+        real_existing == real_directory || real_existing.parents.includes?(real_directory)
+      rescue File::Error
+        false
       end
 
       private def relative_prefix : String?

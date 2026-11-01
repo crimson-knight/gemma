@@ -89,8 +89,14 @@ module Gemma
 
       # Undoes one save: deletes the files it promoted and points their
       # attachers back at the cached copies, so a later save promotes them
-      # again. Returns the column value from before that save. Safe to call
-      # twice.
+      # again. Returns the column value the row holds once this save is
+      # undone: what the last save still standing wrote, or the committed
+      # value. Grant may undo several saves in save order, so the value is
+      # computed from what remains, not from what this save replaced. Safe
+      # to call twice.
+      #
+      # The attachment keeps its assignments (a new file, or a removal) and
+      # is marked changed, so the next save writes them again.
       def undo(entry : SaveEntry(T)) : T
         unless entry.undone?
           entry.undone = true
@@ -98,9 +104,9 @@ module Gemma
             attacher.set(cached) if attacher.file == promoted
             delete_after_failure(promoted)
           end
-          @changed = true unless entry.list_of_promotions.empty?
+          @changed = true
         end
-        entry.column_before
+        expected_column
       end
 
       # After the transaction commits a save: deletes what the final row no
@@ -244,7 +250,7 @@ module Gemma
             end
           end
         rescue error
-          list_of_files_cached_here.each(&.delete)
+          list_of_files_cached_here.each { |cached_file| delete_after_failure(cached_file) }
           raise error
         end
         @list_of_attachers = replacements

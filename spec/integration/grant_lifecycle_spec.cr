@@ -281,6 +281,39 @@ describe "Gemma::Grant attachment lifecycle on a real Grant model" do
       IntegrationListing.find!(listing.id).photo.should eq(kept_photo)
     end
 
+    it "restores the committed file when two saves of one record roll back together" do
+      listing = saved_listing
+      committed_photo = listing.photo
+
+      IntegrationListing.transaction do
+        listing.photo = png_io
+        listing.save.should be_true
+        listing.photo = png_io
+        listing.save.should be_true
+        raise Grant::Transaction::Rollback.new
+      end
+
+      listing.photo_data.should eq(committed_photo)
+      committed_photo.try(&.exists?).should be_true
+      IntegrationListing.find!(listing.id).photo.should eq(committed_photo)
+    end
+
+    it "writes a rolled-back removal again on the next save" do
+      listing = saved_listing
+      committed_photo = listing.photo
+
+      IntegrationListing.transaction do
+        listing.photo = nil
+        listing.save.should be_true
+        raise Grant::Transaction::Rollback.new
+      end
+
+      listing.photo_changed?.should be_true
+      listing.save.should be_true
+      IntegrationListing.find!(listing.id).photo.should be_nil
+      committed_photo.try(&.exists?).should be_false
+    end
+
     it "keeps the committed file when it is removed without a later save" do
       listing = saved_listing
       saved_photo = nil

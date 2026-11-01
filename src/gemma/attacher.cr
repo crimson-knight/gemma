@@ -146,8 +146,9 @@ module Gemma
         change(upload(part, storage, **options))
       end
 
-      # Deletes any previous file, promotes a newly attached cached file, and
-      # clears dirty tracking.
+      # Promotes a newly attached cached file, then deletes any previous
+      # file, and clears dirty tracking. The previous file is deleted only
+      # after the promotion succeeds, so a failed promotion keeps it.
       #
       # This was called `finalize` before Gemma 0.7. Crystal calls a method
       # named `finalize` from the garbage collector, so every abandoned
@@ -162,8 +163,8 @@ module Gemma
       # attacher.changed? # => false
       # ```
       def promote_and_cleanup : Nil
-        destroy_previous
         promote_cached
+        destroy_previous
         @previous = nil if changed?
       end
 
