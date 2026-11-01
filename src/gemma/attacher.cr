@@ -96,7 +96,7 @@ module Gemma
       def attach_cached(part, **options)
         if part.is_a?(IO) || part.nil?
           attach_cached(part, **options)
-        elsif part.is_a?(CachedFileReference) || part.is_a?(UploadedFile)
+        elsif part.is_a?(CachedFileReference) || part.is_a?(UploadedFile) || part.is_a?(String) || part.is_a?(Hash)
           attach_cached(part, **options)
         else
           attach(part, cache_key, **options)
@@ -117,7 +117,11 @@ module Gemma
         change(cached(reference))
       end
 
-      def attach_cached(value : String | Hash(String, String), **options)
+      # Attaches the cached file a reference names, given as its JSON or as
+      # a hash of it (form or JSON params), including the nested
+      # `"metadata" => {"filename" => ...}` shape `CachedFileReference#to_json`
+      # produces.
+      def attach_cached(value : String | Hash, **options)
         change(cached(CachedFileReference.parse(value.is_a?(String) ? value : value.to_json)))
       end
 

@@ -365,6 +365,31 @@ describe "Gemma::Grant attachment lifecycle on a real Grant model" do
       listing.save.should be_false
     end
 
+    it "refuses a file pushed into the list column in place" do
+      victim = saved_listing
+      victim_document = victim.documents.first
+
+      listing = IntegrationListing.find!(saved_listing.id)
+      if list_column = listing.documents_data
+        list_column << Gemma::UploadedFile.new(victim_document.id, "store")
+      else
+        fail("expected the documents column")
+      end
+
+      listing.save.should be_false
+    end
+
+    it "attaches a cached-file reference given as a nested hash" do
+      cached = Gemma.upload(png_io, "cache")
+      listing = IntegrationListing.new
+      listing.photo = {"id" => cached.id, "storage_key" => "cache", "metadata" => {"filename" => "me.png"}}
+      listing.save.should be_true
+
+      photo = listing.photo || fail("expected a photo")
+      photo.mime_type.should eq("image/png")
+      photo.original_filename.should eq("me.png")
+    end
+
     it "round-trips through the model's JSON and YAML" do
       listing = IntegrationListing.find!(saved_listing.id)
       photo = listing.photo || fail("expected a photo")

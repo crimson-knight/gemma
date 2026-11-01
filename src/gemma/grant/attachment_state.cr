@@ -49,11 +49,12 @@ module Gemma
       # The column value Gemma expects the record to hold: what the last
       # save wrote, or what the committed row holds. A different value was
       # set on the column directly, bypassing the checks assignment makes.
+      # Returns a fresh copy, so the record never holds Gemma's baseline.
       def expected_column : T
         if entry = @ledger.reverse.find { |candidate| !candidate.undone? }
-          entry.written
+          snapshot(entry.written)
         else
-          committed
+          snapshot(committed)
         end
       end
 
@@ -81,7 +82,7 @@ module Gemma
           end
           raise error
         end
-        entry = SaveEntry(T).new(current_value, column_before, promotions)
+        entry = SaveEntry(T).new(snapshot(current_value), snapshot(column_before), promotions)
         @ledger << entry
         @changed = false
         entry
@@ -158,6 +159,11 @@ module Gemma
       end
 
       abstract def files_of(value : T) : Array(Gemma::UploadedFile)
+
+      # A copy of *value* that shares no mutable state with the record's
+      # column, so changing the column in place never changes Gemma's
+      # baseline (and so never passes the direct-write check).
+      abstract def snapshot(value : T) : T
       abstract def cached?(file : Gemma::UploadedFile) : Bool
     end
 
@@ -166,7 +172,7 @@ module Gemma
       getter attacher : Gemma::Attacher
 
       def initialize(@attacher : Gemma::Attacher, committed : Gemma::UploadedFile?)
-        super(committed)
+        super(committed ? Gemma::UploadedFile.from_json(committed.to_json) : nil)
         @attacher.load_data(committed)
       end
 
@@ -211,6 +217,11 @@ module Gemma
         value ? [value] : [] of Gemma::UploadedFile
       end
 
+      # A JSON round trip, so not even the metadata hashes are shared.
+      def snapshot(value : Gemma::UploadedFile?) : Gemma::UploadedFile?
+        value ? Gemma::UploadedFile.from_json(value.to_json) : nil
+      end
+
       def cached?(file : Gemma::UploadedFile) : Bool
         attacher.cached?(file)
       end
@@ -221,7 +232,7 @@ module Gemma
       getter list_of_attachers : Array(Gemma::Attacher)
 
       def initialize(@attacher_factory : Proc(Gemma::Attacher), committed : Array(Gemma::UploadedFile)?)
-        super(committed || [] of Gemma::UploadedFile)
+        super(committed ? Array(Gemma::UploadedFile).from_json(committed.to_json) : [] of Gemma::UploadedFile)
         @list_of_attachers = @committed.map do |stored|
           attacher = @attacher_factory.call
           attacher.load_data(stored)
@@ -284,6 +295,10 @@ module Gemma
 
       def files_of(value : Array(Gemma::UploadedFile)) : Array(Gemma::UploadedFile)
         value
+      end
+
+      def snapshot(value : Array(Gemma::UploadedFile)) : Array(Gemma::UploadedFile)
+        Array(Gemma::UploadedFile).from_json(value.to_json)
       end
 
       def cached?(file : Gemma::UploadedFile) : Bool

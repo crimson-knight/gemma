@@ -74,7 +74,7 @@ module Gemma
           return unless attachment.changed?
 
           entry = attachment.prepare_save({{ column }})
-          self.{{ column }} = entry.written
+          self.{{ column }} = attachment.snapshot(entry.written)
           # Registered with the transaction, so a rollback of the save, of
           # the savepoint holding it, or of the whole transaction undoes
           # exactly this save.
@@ -153,7 +153,7 @@ module Gemma
           return unless attachments.changed?
 
           entry = attachments.prepare_save({{ column }} || [] of Gemma::UploadedFile)
-          self.{{ column }} = entry.written
+          self.{{ column }} = attachments.snapshot(entry.written)
           ::Grant::Transaction.enqueue_pending_callback(
             Proc(Nil).new { },
             Proc(Nil).new { self.{{ column }} = attachments.undo(entry) }
