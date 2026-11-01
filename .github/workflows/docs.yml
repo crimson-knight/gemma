@@ -18,6 +18,11 @@ jobs:
       - name: Build the pinned toolchain image
         run: docker build --file ci/Dockerfile --tag gemma-ci .
 
+      - name: Install dependencies from the committed lock
+        # `src/gemma/grant.cr` requires Grant, a development dependency, so
+        # the docs build needs the locked shards in lib/.
+        run: docker run --rm -v "$PWD":/app gemma-ci minecart install --frozen --skip-postinstall --skip-ai-docs --skip-ai-assistant
+
       - name: Generate
         run: docker run --rm -v "$PWD":/app gemma-ci crystal-alpha docs
 
