@@ -8,8 +8,12 @@ on:
     branches:
       - master
 
+# Read-only by default; only the deploy job may write, and only gh-pages.
+permissions:
+  contents: read
+
 jobs:
-  generate-and-deploy:
+  generate:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -26,8 +30,34 @@ jobs:
       - name: Generate
         run: docker run --rm -v "$PWD":/app gemma-ci crystal-alpha docs
 
-      - name: Deploy
+      - name: Upload the generated docs
         if: github.event_name == 'push'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gemma-docs
+          path: docs
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    # Publishing pushes to gh-pages, which needs contents: write. Only this
+    # job, and only on a push to master, gets it; it runs no project code.
+    if: github.event_name == 'push'
+    needs: generate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Download the generated docs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gemma-docs
+          path: docs
+
+      - name: Deploy
         uses: JamesIves/github-pages-deploy-action@6c2d9db40f9296374acc17b90404b6e8864128c8 # v4.7.3
         with:
           branch: gh-pages
